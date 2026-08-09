@@ -11,6 +11,9 @@ const state = {
   cascades: [],
   currentTraceCascadeId: null,
   pendingCount: 0,
+  assistantHistory: [],
+  inventoryIndex: null,
+  activePqBatch: null,
 };
 
 // ---------------------------------------------------------------------
@@ -603,6 +606,275 @@ async function loadInventory() {
 }
 
 // ---------------------------------------------------------------------
+// Priority Queue + Freshness Budget Lookup (Feature 8 / 2 / 9)
+// ---------------------------------------------------------------------
+
+const PQ_BUCKETS = [
+  { key: "MOVE_NOW", label: "Move Now", desc: "≤1 effective day left", cls: "pq-move" },
+  { key: "SELL_FIRST", label: "Sell First", desc: "≤3 effective days left", cls: "pq-sell" },
+  { key: "MONITOR", label: "Monitor", desc: "≤7 effective days left", cls: "pq-monitor" },
+  { key: "SAFE", label: "Safe", desc: "> 7 effective days left", cls: "pq-safe" },
+];
+
+async function loadPriorityQueue() {
+  const data = await api("/priority-queue");
+
+  $("#pqGrid").innerHTML = PQ_BUCKETS.map(b => {
+    const items = data.groups[b.key] || [];
+    const count = data.counts[b.key] || 0;
+    const kg = data.kg_totals[b.key] || 0;
+    return `<div class="pq-col ${b.cls}">
+      <div class="pq-col-head">
+        <div>
+          <div class="pq-col-title">${b.label}</div>
+          <div class="pq-col-desc">${b.desc}</div>
+        </div>
+        <div class="pq-col-count">${count}<span>${fmtKg(kg)}</span></div>
+      </div>
+      <div class="pq-col-body">
+        ${items.length ? items.map(f => `
+          <button type="button" class="pq-card ${state.activePqBatch === f.batch_id ? "active" : ""}" data-batch="${f.batch_id}">
+            <div class="pq-card-top"><span class="mono">${escapeHtml(f.batch_code)}</span><span class="pq-card-days">${f.effective_days_remaining}d</span></div>
+            <div class="pq-card-product">${escapeHtml(f.product)}</div>
+            <div class="pq-card-meta">${escapeHtml(f.warehouse)} · ${fmtKg(f.quantity_kg)}</div>
+          </button>`).join("")
+          : `<div class="pq-empty">Nothing here</div>`}
+      </div>
+    </div>`;
+  }).join("");
+
+  $all(".pq-card").forEach(card => {
+    card.addEventListener("click", () => loadFreshnessLookup(Number(card.dataset.batch)));
+  });
+}
+
+async function ensureInventoryIndex() {
+  if (state.inventoryIndex) return state.inventoryIndex;
+  const rows = await api("/inventory");
+  const idx = {};
+  rows.forEach(r => { idx[String(r.batch_code).toLowerCase()] = r.id; });
+  state.inventoryIndex = idx;
+  return idx;
+}
+
+async function searchBatch(query) {
+  const q = (query || "").trim().toLowerCase();
+  if (!q) return;
+  const idx = await ensureInventoryIndex();
+  let id = idx[q];
+  if (!id) {
+    const hit = Object.entries(idx).find(([code]) => code.includes(q));
+    id = hit ? hit[1] : null;
+  }
+  if (id) {
+    loadFreshnessLookup(id);
+  } else {
+    toast(`No batch found matching "${query}"`);
+  }
+}
+
+function driverBarHtml(d) {
+  const positive = d.delta_days >= 0;
+  const widthPct = Math.max(6, Math.min(100, Math.abs(d.delta_days) * 16));
+  return `<div class="driver-row">
+    <div class="driver-label">${escapeHtml(d.label)}<span class="tag tag-muted driver-basis">${escapeHtml(d.basis)}</span></div>
+    <div class="driver-bar-track"><div class="driver-bar-fill ${positive ? "pos" : "neg"}" style="width:${widthPct}%"></div></div>
+    <div class="driver-value ${positive ? "pos" : "neg"}">${d.delta_days > 0 ? "+" : ""}${d.delta_days}d</div>
+  </div>`;
+}
+
+function timelinePointHtml(t) {
+  return `<div class="timeline-pt risk-${t.risk_level.toLowerCase()}">
+    <div class="timeline-label">${escapeHtml(t.label)}</div>
+    <div class="timeline-dot"></div>
+    <div class="timeline-hours">${t.hours_remaining}h</div>
+    <div class="timeline-risk">${escapeHtml(t.risk_level)}</div>
+  </div>`;
+}
+
+function freshnessBudgetHtml(fb) {
+  const priorityClass = fb.priority === "MOVE_NOW" ? "badge-urgent" : fb.priority === "SELL_FIRST" ? "badge-window" : "badge-monitor";
+  return `
+    <div class="fb-head">
+      <div>
+        <div class="fb-batch-code mono">${escapeHtml(fb.batch_code)}</div>
+        <div class="fb-product">${escapeHtml(fb.product)} · ${escapeHtml(fb.warehouse)} (${escapeHtml(fb.warehouse_region)})</div>
+      </div>
+      <div class="fb-head-right">
+        <span class="badge ${priorityClass}">${escapeHtml(fb.priority.replace("_", " "))}</span>
+        <span class="badge badge-${fb.quality_grade}">${fb.quality_grade}</span>
+      </div>
+    </div>
+    <div class="fb-stats">
+      <div class="fb-stat"><span>Quantity</span><b>${fmtKg(fb.quantity_kg)}</b></div>
+      <div class="fb-stat"><span>Calendar days left</span><b>${fb.calendar_days_remaining}d</b></div>
+      <div class="fb-stat"><span>Effective budget</span><b>${fb.effective_days_remaining}d</b></div>
+      <div class="fb-stat"><span>Risk level</span><b>${escapeHtml(fb.risk_level)}</b></div>
+    </div>
+    <div class="fb-section-title">Freshness-Budget Drivers</div>
+    <div class="driver-list">${fb.drivers.map(driverBarHtml).join("")}</div>
+    <div class="fb-section-title">Risk Timeline — next 24h</div>
+    <div class="timeline">${fb.risk_timeline.map(timelinePointHtml).join("")}</div>
+    <p class="fb-note">${escapeHtml(fb.note)}</p>
+  `;
+}
+
+async function loadFreshnessLookup(batchId) {
+  state.activePqBatch = batchId;
+  $all(".pq-card").forEach(c => c.classList.toggle("active", Number(c.dataset.batch) === batchId));
+  const box = $("#freshnessLookup");
+  box.innerHTML = `<div class="empty-state"><p>Loading freshness budget…</p></div>`;
+  try {
+    const fb = await api(`/batches/${batchId}/freshness-budget`);
+    box.innerHTML = freshnessBudgetHtml(fb);
+    box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (e) {
+    box.innerHTML = `<div class="empty-state"><p>Could not load this batch: ${escapeHtml(e.message)}</p></div>`;
+  }
+}
+
+// ---------------------------------------------------------------------
+// Command Assistant (Feature 7)
+// ---------------------------------------------------------------------
+
+const ASSISTANT_SUGGESTIONS = [
+  "What's the biggest waste risk right now?",
+  "Which batch should move first?",
+  "What happens if Nashik is delayed 8h by rainfall?",
+  "Which supplier should we renegotiate with?",
+  "Give me an operations overview",
+];
+
+function loadAssistant() {
+  if (!state.assistantHistory.length) {
+    renderAssistantWelcome();
+  }
+}
+
+function renderAssistantWelcome() {
+  $("#assistantMessages").innerHTML = `
+    <div class="asst-msg asst-msg-bot">
+      <div class="asst-avatar">✦</div>
+      <div class="asst-bubble">
+        <div class="asst-bubble-text">I'm grounded in HARVEX's live operational data — inventory, cascades and every agent decision on record. Ask about a product, a batch, a supplier, or try a what-if scenario.</div>
+      </div>
+    </div>`;
+  renderAssistantSuggestions();
+}
+
+function renderAssistantSuggestions() {
+  $("#assistantSuggestions").innerHTML = ASSISTANT_SUGGESTIONS.map(q =>
+    `<button type="button" class="asst-chip">${escapeHtml(q)}</button>`).join("");
+  $all(".asst-chip").forEach(chip => {
+    chip.addEventListener("click", () => sendAssistantMessage(chip.textContent));
+  });
+}
+
+function appendAssistantMessage(role, innerHtml) {
+  const wrap = document.createElement("div");
+  wrap.className = "asst-msg asst-msg-" + (role === "user" ? "user" : "bot");
+  wrap.innerHTML = innerHtml;
+  $("#assistantMessages").appendChild(wrap);
+  $("#assistantMessages").scrollTop = $("#assistantMessages").scrollHeight;
+  return wrap;
+}
+
+function assistantExtraHtml(res) {
+  const d = res.data || {};
+  if (d.event === "WHAT_IF_SIMULATION" && d.counterfactual) {
+    return `<div class="asst-extra">
+      <span class="tag tag-warn">${escapeHtml(d.label || "Simulation / estimated impact")}</span>
+      ${counterfactualHtml({ counterfactual: d.counterfactual })}
+    </div>`;
+  }
+  if (d.event === "BIGGEST_WASTE_RISK" && (d.top_batches || []).length) {
+    return `<div class="asst-batch-list">${d.top_batches.map(b => `
+      <button type="button" class="asst-batch-chip" data-lookup="${b.batch_code}">
+        <span class="mono">${escapeHtml(b.batch_code)}</span>
+        <span>${escapeHtml(b.product)}</span>
+        <span class="badge ${(b.risk_level === "CRITICAL" || b.risk_level === "HIGH") ? "badge-urgent" : "badge-monitor"}">${escapeHtml(b.risk_level)}</span>
+      </button>`).join("")}</div>`;
+  }
+  if (d.event === "MOVE_FIRST" && (d.move_now_batches || []).length) {
+    return `<div class="asst-batch-list">${d.move_now_batches.map(b => `
+      <button type="button" class="asst-batch-chip" data-lookup="${b.batch_code}">
+        <span class="mono">${escapeHtml(b.batch_code)}</span>
+        <span>${escapeHtml(b.product)}</span>
+        <span class="num">${fmtKg(b.quantity_kg)}</span>
+      </button>`).join("")}</div>`;
+  }
+  if (d.event === "WHAT_IF_SIMULATION") {
+    return `<div class="asst-extra"><span class="tag tag-warn">${escapeHtml(d.label || "Simulation / estimated impact")}</span></div>`;
+  }
+  return "";
+}
+
+function assistantReplyHtml(res) {
+  const modeTag = res.mode === "live"
+    ? `<span class="tag tag-live">live reasoning</span>`
+    : `<span class="tag tag-muted">simulation mode</span>`;
+  const intentTag = `<span class="tag">${escapeHtml((res.intent || "").replace(/_/g, " "))}</span>`;
+  const evidence = res.evidence || [];
+  const evidenceHtml = evidence.length ? `
+    <details class="asst-evidence">
+      <summary>Evidence (${evidence.length})</summary>
+      ${evidence.map(e => `<div class="asst-evidence-row">${escapeHtml(String(e))}</div>`).join("")}
+    </details>` : "";
+  const agents = res.agents_consulted || [];
+  const agentsHtml = agents.length ? `
+    <div class="asst-agents">${agents.map(a => `<span class="asst-agent-chip"><span class="agent-dot"></span>${escapeHtml(a)}</span>`).join("")}</div>` : "";
+
+  return `
+    <div class="asst-avatar">✦</div>
+    <div class="asst-bubble">
+      <div class="asst-bubble-head">${intentTag}${modeTag}</div>
+      <div class="asst-bubble-text">${escapeHtml(res.answer)}</div>
+      ${assistantExtraHtml(res)}
+      ${evidenceHtml}
+      ${agentsHtml}
+    </div>`;
+}
+
+async function sendAssistantMessage(message) {
+  message = (message || "").trim();
+  if (!message) return;
+
+  appendAssistantMessage("user", `<div class="asst-bubble asst-bubble-user">${escapeHtml(message)}</div>`);
+  $("#assistantInput").value = "";
+  $("#assistantSuggestions").innerHTML = "";
+  state.assistantHistory.push({ role: "user", text: message });
+
+  const thinkingEl = appendAssistantMessage("bot", `
+    <div class="asst-avatar">✦</div>
+    <div class="asst-bubble asst-typing"><span></span><span></span><span></span></div>`);
+
+  try {
+    const res = await api("/assistant/query", { method: "POST", body: JSON.stringify({ message }) });
+    thinkingEl.remove();
+    appendAssistantMessage("bot", assistantReplyHtml(res));
+    state.assistantHistory.push({ role: "assistant", data: res });
+    $all(".asst-batch-chip").forEach(chip => {
+      chip.addEventListener("click", async () => {
+        setView("priority");
+        await loadPriorityQueue();
+        searchBatch(chip.dataset.lookup);
+      });
+    });
+  } catch (e) {
+    thinkingEl.remove();
+    appendAssistantMessage("bot", `
+      <div class="asst-avatar">✦</div>
+      <div class="asst-bubble"><div class="asst-bubble-text">Something went wrong reaching the Command Assistant: ${escapeHtml(e.message)}</div></div>`);
+  }
+  renderAssistantSuggestions();
+}
+
+function clearAssistant() {
+  state.assistantHistory = [];
+  renderAssistantWelcome();
+}
+
+// ---------------------------------------------------------------------
 // Procurement & Risk
 // ---------------------------------------------------------------------
 
@@ -767,6 +1039,20 @@ async function init() {
   $("#provenanceModal").addEventListener("click", (e) => {
     if (e.target.id === "provenanceModal") $("#provenanceModal").classList.remove("open");
   });
+
+  $("#assistantForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    sendAssistantMessage($("#assistantInput").value);
+  });
+  $("#assistantClearBtn").addEventListener("click", clearAssistant);
+
+  const batchSearchForm = $("#batchSearchForm");
+  if (batchSearchForm) {
+    batchSearchForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      searchBatch($("#batchSearchInput").value);
+    });
+  }
 
   try {
     const meta = await api("/meta");

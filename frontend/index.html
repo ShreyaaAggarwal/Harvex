@@ -169,9 +169,12 @@
         <div class="panel">
           <div class="panel-head">
             <h2>Freshness Budget Lookup</h2>
-            <span class="panel-note">Click any batch above, or search a batch code</span>
+            <form id="batchSearchForm" class="inline-search" autocomplete="off">
+              <input type="text" id="batchSearchInput" placeholder="Search batch code…" />
+              <button class="btn btn-ghost btn-sm" type="submit">Find</button>
+            </form>
           </div>
-          <div id="freshnessLookup"><div class="empty-state"><p>Select a batch from the priority queue above to see its freshness budget, drivers and risk timeline.</p></div></div>
+          <div id="freshnessLookup"><div class="empty-state"><p>Select a batch from the priority queue above, or search a batch code, to see its freshness budget, drivers and risk timeline.</p></div></div>
         </div>
       </section>
 
@@ -179,14 +182,20 @@
       <section id="view-assistant" class="view">
         <div class="panel assistant-layout">
           <div class="panel-head">
-            <h2>HARVEX Command Assistant</h2>
-            <span class="tag tag-muted">Grounded in live system state</span>
+            <div>
+              <h2>HARVEX Command Assistant</h2>
+              <span class="panel-note">Every answer is grounded in real inventory, cascade and agent-decision data</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="tag tag-muted">Grounded in live system state</span>
+              <button class="btn btn-ghost btn-sm" type="button" id="assistantClearBtn">Clear</button>
+            </div>
           </div>
           <div id="assistantMessages" class="assistant-messages"></div>
           <div class="assistant-suggestions" id="assistantSuggestions"></div>
-          <form class="assistant-input-row" id="assistantForm">
+          <form class="assistant-input-row" id="assistantForm" autocomplete="off">
             <input type="text" id="assistantInput" placeholder="Ask about a product, batch, supplier — or try a what-if…" autocomplete="off" />
-            <button class="btn btn-primary" type="submit">Ask</button>
+            <button class="btn btn-primary" type="submit">➤ Ask</button>
           </form>
         </div>
       </section>
