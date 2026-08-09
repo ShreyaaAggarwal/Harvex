@@ -1,45 +1,299 @@
-# HARVEX — Autonomous Operations for India's Fresh-Produce Supply Chain
+# HARVEX — Autonomous Fresh-Produce Operations OS
 
-**HACKNITE CODE ROYALE 2026 — Fresh Produce OS — Autonomous AI Agents**
+HARVEX is an **autonomous decision engine for fresh-produce supply chains**. It detects operational risks such as demand shocks, supplier shortfalls, and shelf-life crises, then coordinates specialized agents to decide what should happen across **inventory, procurement, warehousing, pricing, and logistics**.
 
-> Most systems tell an operator what changed. HARVEX determines what that
-> change affects, coordinates the relevant operational decisions, and
-> tracks the resulting waste and value impact.
+Instead of simply showing that a problem exists, HARVEX follows the **ripple effect** of that problem and turns it into a chain of operational decisions.
 
-HARVEX turns supply-chain changes into autonomous chains of coordinated
-decisions. A demand shock, a supplier shortfall, or a cold-chain breach
-is detected once — the **Ripple Engine** then propagates that change
-through specialized agents (Procurement, Warehouse, Shelf-Life, Pricing,
-Cannibalization Guard, Vendor Renegotiation, Logistics, ERP, Waste
-Ledger), each reacting independently and publishing further events. The
-result is visible, step by step, in the **Explainable Cascade Trace**.
+> **Detect → Reason → Coordinate → Act → Measure Impact**
 
 ---
 
-## 1. Primary subtrack
+## 🚨 The Problem
 
-🤖 **Autonomous AI Agents** — AI agents orchestrating agricultural and
-operational workflows (demand sensing, procurement planning, warehouse
-allocation, pricing, cold-chain risk, logistics coordination, ERP
-automation). Supporting subtracks touched: Logistics & Traceability,
-Sustainability & Rescue, Enterprise Software, Climate & Risk.
+Fresh produce has a narrow window between **arrival and spoilage**.
 
-## 2. Data
+A small change in demand can create a chain reaction:
 
-The official HACKNITE datasets were not accessible during development.
-HARVEX ships a **synthetic seed dataset** (`backend/seed_data.py`) —
-10 produce types, 8 suppliers, 6 regional warehouses, ~70 inventory
-batches, 60 days of sales history, demand signals, open procurement
-orders, quality observations and cold-chain readings. Every row is
-flagged `is_simulated = 1` in the schema, and every impact number the
-UI shows is labelled **"Prototype simulation / estimated impact."**
+**Demand falls**
+→ excess inventory
+→ shelf-life pressure
+→ markdowns
+→ unnecessary procurement
+→ warehouse congestion
+→ wastage
 
-`backend/data/adapters.py` is the seam where a real HACKNITE
-dataset/API feed would replace the seed data — the agents, Ripple
-Engine, API layer and frontend never depend on where a row came from,
-only on the database schema in `backend/database.py`.
+Traditional supply-chain dashboards mostly show these problems **after they happen**.
 
-## 3. Architecture
+HARVEX is designed to respond to them **before value is lost**.
+
+---
+
+## 💡 What HARVEX Does
+
+HARVEX continuously works across the supply-chain network to:
+
+* Monitor inventory and shelf life
+* Detect demand changes
+* Identify surplus and at-risk stock
+* Adjust procurement quantities
+* Evaluate supplier risk
+* Prioritize warehouse allocation
+* Coordinate movement of urgent batches
+* Recommend pricing/markdown actions
+* Track pending approvals
+* Maintain an explainable decision trail
+* Estimate avoided waste and preserved value
+
+---
+
+## 🧠 The Ripple Engine
+
+The core idea behind HARVEX is the **Ripple Engine**.
+
+A single operational event can trigger decisions across multiple specialized agents.
+
+### Example
+
+**Event:**
+Banana demand falls **14% in Bengaluru**
+
+↓
+
+**Demand Sensing Agent**
+Detects and classifies the demand shock.
+
+↓
+
+**Procurement Planning Agent**
+Reduces the upcoming procurement target.
+
+↓
+
+**Warehouse Allocation Agent**
+Identifies surplus banana inventory and batches approaching expiry.
+
+↓
+
+**Vendor Renegotiation Agent**
+Recommends reducing an existing supplier commitment.
+
+↓
+
+**Shelf-Life Budget Allocator**
+Prioritizes batches that need immediate movement.
+
+↓
+
+**Logistics Coordination Agent**
+Routes urgent stock toward a high-demand retail cluster.
+
+↓
+
+**Waste Ledger**
+Calculates the estimated impact of the intervention.
+
+This creates an **explainable chain of decisions instead of a black-box recommendation.**
+
+---
+
+## 🤖 Specialized Agents
+
+| Agent                            | Responsibility                                                 |
+| -------------------------------- | -------------------------------------------------------------- |
+| **Demand Sensing Agent**         | Detects demand shocks and changes                              |
+| **Procurement Planning Agent**   | Adjusts future procurement                                     |
+| **Warehouse Allocation Agent**   | Identifies surplus and risky inventory                         |
+| **Vendor Renegotiation Agent**   | Handles supplier quantity adjustments                          |
+| **Shelf-Life Budget Allocator**  | Prioritizes expiring batches                                   |
+| **Logistics Coordination Agent** | Plans movement of urgent stock                                 |
+| **Pricing Agent**                | Recommends markdowns                                           |
+| **Waste Ledger Agent**           | Estimates avoided waste and recovered value                    |
+| **ERP Automation Agent**         | Generates operational actions                                  |
+| **Demand Cannibalization Guard** | Checks whether markdowns may shift demand from another product |
+
+---
+
+## 🖥️ Product Modules
+
+### Operations Overview
+
+A real-time command center showing:
+
+* Total inventory
+* Expiring inventory
+* Ripple cascades
+* Pending approvals
+* Recent operational events
+* Estimated impact
+* Network footprint
+
+### Ripple Console
+
+The central decision interface.
+
+It displays:
+
+* Triggering event
+* Agent-by-agent reasoning
+* Actions taken
+* Confidence
+* Dependencies
+* Approval requirements
+* Final cascade status
+
+### Inventory
+
+Provides a batch-level view of:
+
+* Product
+* Warehouse
+* Region
+* Quantity
+* Grade
+* Days remaining
+* Inventory status
+
+### Procurement & Risk
+
+Tracks:
+
+* Open procurement orders
+* Suppliers
+* Quantities
+* Price/kg
+* Delivery dates
+* Supply risks
+
+### Logistics
+
+Shows movement priorities based on:
+
+* Shelf life
+* Economic value
+* Demand
+* Destination
+* Urgency
+
+### Waste Ledger
+
+Provides an impact view containing:
+
+* Estimated waste avoided
+* Estimated value preserved
+* Baseline waste
+* HARVEX outcome
+* Shelf-life utilization
+
+### Agent Activity
+
+Provides an audit-style feed of decisions made across cascades.
+
+---
+
+## 🔄 Scenario Simulator
+
+HARVEX includes a scenario simulator for testing operational events such as:
+
+* ⚡ Demand Shock
+* ⚡ Supplier Shortfall
+* ⚡ Shelf-Life Crisis
+* ⚡ Cold-Chain Breach
+* ⚡ Demand Spike
+* ⚡ Markdown Cannibalization
+
+A scenario can be injected into the system and the **Ripple Engine generates the resulting decision chain**.
+
+---
+
+## 📊 Example Scenario
+
+### Input
+
+> **Banana demand falls 14% in Bengaluru**
+
+### HARVEX Response
+
+**Detection**
+
+`DEMAND_SHOCK`
+
+↓
+
+**Procurement**
+
+Reduce upcoming order by **634 kg**
+
+↓
+
+**Warehouse**
+
+Identify approximately **29,954 kg** on hand with **13,070 kg** exposed to shelf-life pressure
+
+↓
+
+**Supplier**
+
+Recommend reducing an existing commitment
+
+↓
+
+**Allocation**
+
+Prioritize the batches with the shortest remaining shelf life
+
+↓
+
+**Logistics**
+
+Move urgent batches toward the nearest high-demand cluster
+
+↓
+
+**Impact**
+
+Estimate the amount of waste and value that could be avoided.
+
+---
+
+## 🏗️ Architecture
+
+```text
+                    ┌──────────────────────┐
+                    │     HARVEX UI        │
+                    │  Operations Console  │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │    Ripple Engine     │
+                    │ Event → Decisions    │
+                    └──────────┬───────────┘
+                               │
+             ┌─────────────────┼─────────────────┐
+             ▼                 ▼                 ▼
+       Demand Agent      Procurement Agent   Warehouse Agent
+             │                 │                 │
+             └─────────────────┼─────────────────┘
+                               ▼
+                    ┌──────────────────────┐
+                    │ Coordination Layer   │
+                    └──────────┬───────────┘
+                               │
+          ┌────────────────────┼────────────────────┐
+          ▼                    ▼                    ▼
+     Logistics             Pricing             Supplier
+          │                    │                    │
+          └────────────────────┼────────────────────┘
+                               ▼
+                    ┌──────────────────────┐
+                    │    Impact Ledger     │
+                    │ Waste + Value Saved  │
+                    └──────────────────────┘
+```
+
+---
+
+# Folder Architecture
 
 ```
 harvex/
@@ -75,131 +329,129 @@ harvex/
     └── js/app.js               Talks to the Flask API, renders every screen
 ```
 
-### Why this is not a fixed linear pipeline
 
-Agents never call each other. They publish structured **Events**
-(`engine/events.py`) onto the Ripple Engine. Every agent whose
-`reacts_to` list includes that event type reacts independently — so one
-trigger fans out to several agents at once (e.g. `DEMAND_SHOCK` reaches
-Procurement, Warehouse *and* Vendor Renegotiation in parallel), and
-their outputs converge again downstream (Pricing → Cannibalization
-Guard, and Pricing/Logistics/Procurement all feed the ERP Automation
-Agent). The full graph for one trigger is 8–14 agent decisions deep.
+## 🛠️ Tech Stack
 
-### Explainable Cascade Trace
+### Frontend
 
-Every event, agent decision, action and downstream event is persisted
-with a `cascade_id` and `step_order`. `GET /api/cascades/<id>/trace`
-replays that log as an ordered list of:
+* React
+* Vite
+* JavaScript
+* CSS
 
-`TRIGGER → AGENT → DECISION → WHY → DOWNSTREAM EVENT → NEXT AGENT → ACTION → CONFIDENCE`
+### Backend
 
-The Ripple Console renders this as a connected, animated flow — the
-signature UI element.
+* Python
+* Flask
+* Flask-CORS
+* Gunicorn
 
-### Deterministic vs. LLM
+### Deployment
 
-Arithmetic, shelf-life math, exposure classification, markdown sizing
-and waste calculations are **deterministic Python**, not LLM calls —
-see any `agents/*.py`. The LLM (via `llm_service.py`) is used only to
-phrase the one- or two-sentence "why" explanation attached to each
-decision. If `ANTHROPIC_API_KEY` is unset, or the call fails for any
-reason, HARVEX falls back to a deterministic template built from the
-same real numbers and marks it **"Simulation mode"** in the UI — the
-product stays fully demoable offline.
+* Vercel — Frontend
+* Render — Backend
 
-### Human-in-the-loop
+---
 
-Actions above a materiality threshold (large procurement changes, deep
-markdowns, vendor renegotiations) are created with
-`requires_approval = true` and sit in **Pending Approvals** until a
-manager approves or rejects them from the drawer in the UI. Low-risk
-actions (dispatch tasks, small ERP updates) auto-execute in the
-simulation.
+## 🚀 Running Locally
 
-## 4. Setup & run
+### 1. Clone the repository
 
-Requirements: Python 3.9+, no external network access needed to run.
+```bash
+git clone https://github.com/ShreyaaAggarwal/Harvex.git
+cd Harvex
+```
+
+### 2. Backend
 
 ```bash
 cd backend
-pip install -r requirements.txt          # only dependency is Flask
-cp .env.example .env                     # optional — see below
-python seed_data.py                      # creates backend/harvex.db
-python app.py                            # serves API + frontend on :5000
+pip install -r requirements.txt
+python app.py
 ```
 
-Open **http://localhost:5000** in a browser.
+For production:
 
-To re-seed at any time (fresh demo state), either re-run
-`python seed_data.py` or `POST /api/admin/reset`.
-
-### Optional: live LLM reasoning
-
-By default HARVEX runs in **Simulation mode** — explanation text is
-generated deterministically from real computed numbers, no API key
-needed. To enable live reasoning text from Claude, set in `.env` (or
-the environment):
-
-```
-ANTHROPIC_API_KEY=sk-ant-...
-ANTHROPIC_MODEL=claude-sonnet-4-6
+```bash
+gunicorn app:app
 ```
 
-The mode currently active is shown in the sidebar ("Live reasoning" /
-"Simulation mode") and per-step in the Cascade Trace.
+### 3. Frontend
 
-## 5. Demo script (3–5 minutes)
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-1. **Overview** — stable network state: on-hand inventory, batches
-   expiring soon, warehouse footprint.
-2. **Ripple Console → "Demand Shock"** — triggers *"Alphonso Mango
-   demand falls 27% in Pune."*
-3. Watch the cascade render live: Demand Sensing → Procurement
-   (reduce order) → Warehouse (surplus exposure) → Vendor
-   Renegotiation → Shelf-Life Budget Allocator (prioritizes soonest-
-   expiring batches) → Pricing (sized markdown) → Cannibalization
-   Guard (checks diversion to Banana/Papaya/Pomegranate/Grapes) →
-   Logistics (dispatch priority) → ERP Automation (queued actions) →
-   Waste Ledger (kg avoided, ₹ preserved).
-4. Open **Pending Approvals** — approve the queued markdown/PO
-   amendment to show human-in-the-loop control.
-5. **Waste Ledger** tab — cumulative estimated impact across cascades,
-   clearly labelled as prototype simulation.
-6. Run **Cold-Chain Breach** or **Supplier Shortfall** to show the
-   engine reacts differently to a different trigger type without any
-   code change — same agents, same engine, different cascade shape.
+---
 
-## 6. Scaling notes (conceptual — not load-tested)
+## 📦 Backend Requirements
 
-- The schema uses IDs/foreign keys per product/warehouse/supplier/region
-  rather than hardcoding a single warehouse, so adding regional nodes is
-  a data operation, not a code change.
-- Agents are stateless — all operational state lives in the database,
-  so the Ripple Engine's propagation loop could run across multiple
-  worker processes reading/writing the same store (swap SQLite for
-  Postgres and add a message queue in front of the event loop for a
-  production deployment).
-- Deterministic calculations dominate; LLM calls are limited to short
-  explanation text per decision, capping cost and latency as event
-  volume grows.
-- `data/adapters.py` isolates the ingestion boundary so plugging in the
-  official multi-region HACKNITE feeds does not touch agents, the
-  Ripple Engine, or the frontend.
-- Not claimed or tested at production/million-tonne scale — this is a
-  hackathon prototype demonstrating the architecture pattern.
+```txt
+Flask==3.1.3
+gunicorn
+flask-cors
+```
 
-## 7. What's simulated vs. real
+---
 
-- **Real**: the orchestration logic, the event-driven fan-out/fan-in,
-  the deterministic business math (shelf-life scoring, markdown sizing,
-  waste/value calculations), the full persisted decision trail, the
-  approval workflow.
-- **Simulated / synthetic**: the underlying dataset (no official
-  HACKNITE data was available), ERP/ WMS integrations (actions are
-  recorded as simulated ERP actions, not sent to a real ERP), and LLM
-  explanation text falls back to deterministic templates without an API
-  key.
+## 🎯 Design Philosophy
 
-No dead buttons, no unimplemented screens — every visible feature in
-the UI is backed by a working API endpoint and real (if synthetic) data.
+HARVEX is built around three principles:
+
+### 1. **Autonomous**
+
+The system should move beyond dashboards and determine the next operational action.
+
+### 2. **Explainable**
+
+Every major decision should have a visible reason, confidence level, trigger, and resulting action.
+
+### 3. **Human-in-the-loop**
+
+Not every action should be executed automatically. Higher-risk decisions can be routed for approval while low-risk actions can be auto-executed.
+
+---
+
+## 📈 Impact
+
+HARVEX measures the potential effect of its interventions through:
+
+* Waste avoided
+* Recoverable value
+* Shelf-life utilization
+* Inventory movement
+* Procurement reduction
+* Operational actions
+
+**Important:** Impact numbers shown in the prototype are based on **synthetic seed data and simulation assumptions**. They represent estimated/prototype impact rather than measured real-world outcomes.
+
+---
+
+## 🔮 Future Scope
+
+* Real-time IoT cold-chain sensor integration
+* Live retailer demand feeds
+* Weather-aware demand forecasting
+* Supplier reliability scoring
+* Route optimization
+* ERP/WMS integration
+* Real transaction execution
+* Advanced ML demand forecasting
+* Multi-city supply-chain optimization
+
+---
+
+## 🏆 Why HARVEX?
+
+Most supply-chain systems answer:
+
+> **“What is happening?”**
+
+HARVEX aims to answer:
+
+> **“What should happen next — and why?”**
+
+**HARVEX turns supply-chain problems into coordinated, explainable actions before fresh produce becomes wasted value.**
+
