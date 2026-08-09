@@ -39,10 +39,16 @@
       <button class="nav-item" data-view="ripple">
         <span class="nav-ico">◎</span> Ripple Console
       </button>
+      <button class="nav-item" data-view="assistant">
+        <span class="nav-ico">✦</span> Command Assistant
+      </button>
     </div>
 
     <div class="nav-group">
       <div class="nav-label">Operations</div>
+      <button class="nav-item" data-view="priority">
+        <span class="nav-ico">◆</span> Priority Queue
+      </button>
       <button class="nav-item" data-view="inventory">
         <span class="nav-ico">▤</span> Inventory
       </button>
@@ -154,6 +160,34 @@
             </div>
           </div>
 
+        </div>
+      </section>
+
+      <!-- ================= PRIORITY QUEUE (Feature 8) ================= -->
+      <section id="view-priority" class="view">
+        <div class="pq-grid" id="pqGrid"><!-- injected --></div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Freshness Budget Lookup</h2>
+            <span class="panel-note">Click any batch above, or search a batch code</span>
+          </div>
+          <div id="freshnessLookup"><div class="empty-state"><p>Select a batch from the priority queue above to see its freshness budget, drivers and risk timeline.</p></div></div>
+        </div>
+      </section>
+
+      <!-- ================= COMMAND ASSISTANT (Feature 7) ================= -->
+      <section id="view-assistant" class="view">
+        <div class="panel assistant-layout">
+          <div class="panel-head">
+            <h2>HARVEX Command Assistant</h2>
+            <span class="tag tag-muted">Grounded in live system state</span>
+          </div>
+          <div id="assistantMessages" class="assistant-messages"></div>
+          <div class="assistant-suggestions" id="assistantSuggestions"></div>
+          <form class="assistant-input-row" id="assistantForm">
+            <input type="text" id="assistantInput" placeholder="Ask about a product, batch, supplier — or try a what-if…" autocomplete="off" />
+            <button class="btn btn-primary" type="submit">Ask</button>
+          </form>
         </div>
       </section>
 

@@ -21,7 +21,7 @@ def _days_left(expiry_date_str):
 
 class WarehouseAllocationAgent(Agent):
     name = "Warehouse Allocation Agent"
-    reacts_to = (EV.DEMAND_SHOCK, EV.SUPPLY_RISK_DETECTED, EV.COLD_CHAIN_BREACH)
+    reacts_to = (EV.DEMAND_SHOCK, EV.SUPPLY_RISK_DETECTED, EV.COLD_CHAIN_BREACH, EV.LOGISTICS_DELAY)
 
     def _batches_for_product(self, conn, product_id, warehouse_id=None):
         q = ("SELECT b.*, p.shelf_life_days, p.name as product_name FROM inventory_batches b "
@@ -35,7 +35,7 @@ class WarehouseAllocationAgent(Agent):
     def react(self, event, conn, llm) -> AgentResult:
         p = event.payload
 
-        if event.event_type == EV.COLD_CHAIN_BREACH:
+        if event.event_type in (EV.COLD_CHAIN_BREACH, EV.LOGISTICS_DELAY):
             batches = conn.execute(
                 "SELECT b.*, pr.shelf_life_days, pr.name as product_name FROM inventory_batches b "
                 "JOIN products pr ON pr.id = b.product_id WHERE b.id IN ({})".format(
@@ -43,7 +43,7 @@ class WarehouseAllocationAgent(Agent):
                 ) if p["affected_batch_ids"] else "SELECT * FROM inventory_batches WHERE 0",
                 p["affected_batch_ids"] or [],
             ).fetchall()
-            exposure_type = "COLD_CHAIN_EXPOSURE"
+            exposure_type = "COLD_CHAIN_EXPOSURE" if event.event_type == EV.COLD_CHAIN_BREACH else "LOGISTICS_DELAY_EXPOSURE"
             product_id = batches[0]["product_id"] if batches else None
         else:
             product_id = p["product_id"]

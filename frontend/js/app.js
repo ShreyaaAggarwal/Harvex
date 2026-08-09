@@ -82,6 +82,8 @@ function toast(msg) {
 const VIEW_TITLES = {
   overview: ["Operations Overview", "Live state of the fresh-produce network"],
   ripple: ["Ripple Console", "Trigger events and watch autonomous cascades unfold"],
+  assistant: ["Command Assistant", "Ask HARVEX about products, batches, suppliers — or run a what-if"],
+  priority: ["Priority Queue", "Every in-stock batch classified by real freshness-budget risk"],
   inventory: ["Inventory", "Batches across all warehouses, ranked by shelf-life urgency"],
   procurement: ["Procurement & Risk", "Open commitments and active supply risk"],
   logistics: ["Logistics", "Movement priority derived from remaining economic value"],
@@ -103,6 +105,8 @@ function setView(view) {
 function loadView(view) {
   if (view === "overview") return loadOverview();
   if (view === "ripple") return loadRippleConsole();
+  if (view === "assistant") return loadAssistant();
+  if (view === "priority") return loadPriorityQueue();
   if (view === "inventory") return loadInventory();
   if (view === "procurement") return loadProcurement();
   if (view === "logistics") return loadLogistics();
@@ -262,12 +266,76 @@ const DECISION_FACTS = {
   ERP_ACTION_GENERATED: d => [["Task", d.task], ["Type", d.action_type]],
   WASTE_IMPACT_ESTIMATED: d => d.baseline_waste_kg !== undefined ? [["Baseline waste", fmtKg(d.baseline_waste_kg)], ["HARVEX waste", fmtKg(d.harvex_waste_kg)], ["Avoided", fmtKg(d.waste_avoided_kg)], ["Value preserved", fmtINR(d.value_preserved_inr)]] : [["Note", d.note || "—"]],
   FARMER_COMMITMENT_ADVISORY: d => d.recommended_stance ? [["Product", d.product], ["Trend", d.dominant_recent_trend], ["Stance", d.recommended_stance]] : [["Note", d.note || "—"]],
+  LOGISTICS_DELAY: d => [["Warehouse", d.warehouse], ["Disruption", (d.disruption_type||"").replace(/_/g," ")], ["Delay", d.delay_hours + "h"], ["Affected", fmtKg(d.affected_kg)], ["Severity", d.severity]],
+  INTERVENTION_RECOMMENDED: d => d.recommended_label ? [["Product", d.product], ["At risk", fmtKg(d.at_risk_kg)], ["Recommended", d.recommended_label], ["Options evaluated", (d.options||[]).length]] : [["Note", d.note || "—"]],
 };
 
 function decisionFacts(decision) {
   const fn = DECISION_FACTS[decision.event];
   const facts = fn ? fn(decision) : Object.entries(decision).filter(([k]) => !k.startsWith("_") && k !== "event").slice(0, 4);
   return facts.filter(([, v]) => v !== undefined && v !== null && v !== "");
+}
+
+// ---- Feature 3/4/6 renderers, reused by both the trace and the provenance modal ----
+
+function routeCompareHtml(moves) {
+  const routed = (moves || []).filter(m => m.chosen_route);
+  if (!routed.length) return "";
+  const m = routed[0];
+  const cards = m.route_options.map(o => `<div class="route-card ${o.destination === m.chosen_route.destination ? "chosen" : ""}">
+      <div class="route-card-dest">${escapeHtml(o.destination)}</div>
+      <div class="route-card-row"><span>ETA</span><b>${o.eta_hours}h</b></div>
+      <div class="route-card-row"><span>Cost</span><b>${fmtINR(o.cost_inr)}</b></div>
+      <div class="route-card-row"><span>Shelf life on arrival</span><b>${o.remaining_shelf_life_on_arrival_hours}h</b></div>
+      <div class="route-card-row"><span>Risk</span><b>${escapeHtml(o.risk)}</b></div>
+    </div>`).join("");
+  return `<div style="border-top:1px dashed var(--line-strong);padding-top:9px;margin-top:9px;">
+    <div style="font-size:11px;color:var(--charcoal-45);margin-bottom:6px;">Freshness-aware route comparison for ${escapeHtml(m.batch_code || ("batch " + m.batch_id))} <span class="tag tag-muted">simulated ETA/cost model</span></div>
+    <div class="route-compare">${cards}</div>
+  </div>`;
+}
+
+function interventionOptionsHtml(decision) {
+  if (!decision.options || !decision.options.length) return "";
+  const rows = decision.options.map(o => `<div class="intervention-row ${o.action === decision.recommended_action ? "recommended" : ""}">
+      <div><div class="intervention-label">${escapeHtml(o.label)}</div><div class="intervention-detail">${escapeHtml(o.detail || "")}</div></div>
+      <div class="intervention-metrics">
+        <span title="expected waste reduction">−${fmtKg(o.expected_waste_reduction_kg)}</span>
+        <span title="net value impact">${fmtINR(o.net_value_inr)}</span>
+        <span title="risk reduction">${escapeHtml(o.risk_reduction)}</span>
+      </div>
+    </div>`).join("");
+  return `<div style="margin-top:9px;"><span class="tag tag-warn">Simulation / estimated impact</span><div class="intervention-options">${rows}</div></div>`;
+}
+
+function counterfactualHtml(decision) {
+  const cf = decision.counterfactual;
+  if (!cf) return "";
+  return `<div class="counterfactual">
+    <div class="cf-col cf-without">
+      <div class="cf-title">Without HARVEX</div>
+      <div class="cf-stat"><span>Waste</span><b>${fmtKg(cf.without_harvex.waste_kg)}</b></div>
+      <div class="cf-stat"><span>Value at risk</span><b>${fmtINR(cf.without_harvex.value_at_risk_inr)}</b></div>
+      <div class="cf-stat"><span>Batches</span><b>${cf.without_harvex.affected_batches}</b></div>
+    </div>
+    <div class="cf-col cf-with">
+      <div class="cf-title">With HARVEX</div>
+      <div class="cf-stat"><span>Waste</span><b>${fmtKg(cf.with_harvex.waste_kg)}</b></div>
+      <div class="cf-stat"><span>Value preserved</span><b>${fmtINR(cf.with_harvex.value_preserved_inr)}</b></div>
+      <div class="cf-stat"><span>Batches</span><b>${cf.with_harvex.affected_batches}</b></div>
+    </div>
+  </div>`;
+}
+
+function decisionExtrasHtml(decision) {
+  if (!decision) return "";
+  if (decision.event === "LOGISTICS_PRIORITIZED") return routeCompareHtml(decision.moves);
+  if (decision.event === "INTERVENTION_RECOMMENDED") return interventionOptionsHtml(decision);
+  if (decision.event === "WASTE_IMPACT_ESTIMATED" && decision.counterfactual) {
+    const riskLine = decision.risk_before_level ? `<div style="font-size:11.5px;color:var(--charcoal-70);margin:8px 0 4px;">Risk before <b class="mono">${escapeHtml(decision.risk_before_level)}</b> → after action <b class="mono" style="color:var(--success)">${escapeHtml(decision.risk_after_level)}</b></div>` : "";
+    return riskLine + counterfactualHtml(decision);
+  }
+  return "";
 }
 
 function renderTrace(steps, cascadeId) {
@@ -389,6 +457,10 @@ function decisionHeadline(decision) {
       return `flag a demand ${decision.direction === "DROP" ? "drop" : "spike"} for ${decision.product || ""}`;
     case "SUPPLY_RISK_DETECTED":
       return `flag a supply risk on ${decision.product || ""}`;
+    case "LOGISTICS_DELAY":
+      return `flag a logistics delay at ${decision.warehouse || "this warehouse"}`;
+    case "INTERVENTION_RECOMMENDED":
+      return `recommend ${(decision.recommended_label || "an intervention").toLowerCase()} for ${decision.product || ""}`;
     case "CANNIBALIZATION_FLAGGED":
       return `review markdown cannibalization risk for ${decision.product || ""}`;
     case "WASTE_IMPACT_ESTIMATED":

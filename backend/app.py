@@ -15,6 +15,8 @@ from flask_cors import CORS
 from database import get_conn, db_session, init_db, row_to_dict, rows_to_list, dumps
 from engine.ripple_engine import ripple_engine
 from llm_service import llm_service
+from agents import freshness
+import assistant
 import seed_data
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
@@ -158,6 +160,34 @@ def inventory():
             ORDER BY days_left ASC
         """).fetchall()
         return jsonify(rows_to_list(rows))
+
+
+@app.route("/api/batches/<int:batch_id>/freshness-budget")
+def batch_freshness_budget(batch_id):
+    """Feature 2 / Feature 9 — freshness budget breakdown + risk timeline for one batch."""
+    with db_session() as conn:
+        fb = freshness.compute_freshness_budget(conn, batch_id)
+        if not fb:
+            return jsonify({"error": "batch not found or not in stock"}), 404
+        return jsonify(fb)
+
+
+@app.route("/api/priority-queue")
+def priority_queue():
+    """Feature 8 — Operational Priority Queue: MOVE_NOW / SELL_FIRST / MONITOR / SAFE,
+    computed from the same grounded freshness-budget model, aggregated server-side."""
+    with db_session() as conn:
+        all_fb = freshness.compute_freshness_for_batches(conn)
+        groups = {"MOVE_NOW": [], "SELL_FIRST": [], "MONITOR": [], "SAFE": []}
+        for f in all_fb:
+            groups[f["priority"]].append(f)
+        for k in groups:
+            groups[k].sort(key=lambda f: f["effective_days_remaining"])
+        counts = {k: len(v) for k, v in groups.items()}
+        kg_totals = {k: round(sum(b["quantity_kg"] for b in v), 0) for k, v in groups.items()}
+        # bound payload size for scalability — top 15 per bucket, counts/totals cover the rest
+        bounded = {k: v[:15] for k, v in groups.items()}
+        return jsonify({"counts": counts, "kg_totals": kg_totals, "groups": bounded})
 
 
 @app.route("/api/procurement")
@@ -351,6 +381,16 @@ SCENARIOS = {
         "description": "Banana demand softens 14% — markdown considered against nearby fruit substitutes",
         "run": lambda conn: ripple_engine.trigger_demand_shock(conn, product_id=2, region="Bengaluru", change_pct=-14, scenario_label="MARKDOWN_REVIEW"),
     },
+    "truck_breakdown": {
+        "label": "🚚 Truck Breakdown",
+        "description": "A Nashik dispatch truck is delayed 8 hours — what happens to at-risk batches?",
+        "run": lambda conn: ripple_engine.trigger_logistics_delay(conn, warehouse_id=1, delay_hours=8, disruption_type="TRUCK_BREAKDOWN"),
+    },
+    "heavy_rainfall": {
+        "label": "🌧️ Heavy Rainfall",
+        "description": "Heavy rainfall disrupts the Pune route by 6 hours",
+        "run": lambda conn: ripple_engine.trigger_logistics_delay(conn, warehouse_id=2, delay_hours=6, disruption_type="HEAVY_RAINFALL"),
+    },
 }
 
 
@@ -368,6 +408,21 @@ def trigger_scenario():
     with db_session() as conn:
         cascade_id = SCENARIOS[scenario_id]["run"](conn)
     return jsonify({"cascade_id": cascade_id})
+
+
+# ---------------------------------------------------------------------------
+# Command Assistant (Feature 7)
+# ---------------------------------------------------------------------------
+
+@app.route("/api/assistant/query", methods=["POST"])
+def assistant_query():
+    body = request.get_json(force=True, silent=True) or {}
+    message = (body.get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+    with db_session() as conn:
+        result = assistant.answer(conn, llm_service, message)
+    return jsonify(result)
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +462,30 @@ def reject_action(action_id):
     with db_session() as conn:
         conn.execute("UPDATE actions SET status='REJECTED', decided_at=? WHERE id=?", (datetime.utcnow().isoformat(), action_id))
         return jsonify({"ok": True})
+
+
+@app.route("/api/actions/<int:action_id>/modify", methods=["POST"])
+def modify_action(action_id):
+    """Feature 10 — human-in-the-loop MODIFY. Updates the numeric field the
+    manager adjusted (e.g. quantity_change_kg, markdown_pct) and marks the
+    action MODIFIED (approved-with-changes) rather than a blind approve."""
+    body = request.get_json(force=True, silent=True) or {}
+    field = body.get("field")
+    value = body.get("value")
+    if not field or value is None:
+        return jsonify({"error": "field and value are required"}), 400
+    with db_session() as conn:
+        row = conn.execute("SELECT payload_json FROM actions WHERE id=?", (action_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "action not found"}), 404
+        payload = json.loads(row["payload_json"])
+        payload[field] = value
+        payload["_modified_by_manager"] = True
+        conn.execute(
+            "UPDATE actions SET payload_json=?, status='MODIFIED', decided_at=? WHERE id=?",
+            (dumps(payload), datetime.utcnow().isoformat(), action_id),
+        )
+        return jsonify({"ok": True, "payload": payload})
 
 
 # ---------------------------------------------------------------------------

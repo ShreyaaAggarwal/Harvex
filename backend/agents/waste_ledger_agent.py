@@ -87,6 +87,18 @@ class WasteLedgerAgent(Agent):
             "label": "Simulation / Estimated Impact",
         }
 
+        # Feature 11 — risk before/after action, as a coarse illustrative
+        # classification derived from the same move-priority mix used above
+        # (not a separate fabricated number).
+        move_now_share = sum(m["quantity_kg"] for m in p["moves"] if m["priority"] == "MOVE_NOW") / total_kg
+        if move_now_share >= 0.5:
+            risk_before_level = "HIGH"
+        elif move_now_share > 0:
+            risk_before_level = "MEDIUM"
+        else:
+            risk_before_level = "LOW"
+        risk_after_level = {"HIGH": "MEDIUM", "MEDIUM": "LOW", "LOW": "LOW"}[risk_before_level]
+
         conn.execute(
             "INSERT INTO waste_ledger (cascade_id, product_id, baseline_waste_kg, harvex_waste_kg, waste_avoided_kg, "
             "value_preserved_inr, shelf_life_utilization_pct, notes, created_at, is_simulated) VALUES (?,?,?,?,?,?,?,?,?,1)",
@@ -107,6 +119,9 @@ class WasteLedgerAgent(Agent):
             "value_preserved_inr": value_preserved,
             "shelf_life_utilization_pct": utilization_pct,
             "label": "Prototype simulation / estimated impact",
+            "counterfactual": counterfactual,
+            "risk_before_level": risk_before_level,
+            "risk_after_level": risk_after_level,
         }
         fallback = (
             f"Estimated {waste_avoided:.0f} kg of {p.get('product')} rescued from likely spoilage "

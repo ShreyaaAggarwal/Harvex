@@ -32,6 +32,7 @@ from agents.logistics_agent import LogisticsCoordinationAgent
 from agents.erp_agent import ERPAutomationAgent
 from agents.waste_ledger_agent import WasteLedgerAgent
 from agents.farmer_advisor_agent import FarmerCommitmentAdvisor
+from agents.intervention_agent import InterventionOptimizerAgent
 
 MAX_STEPS = 60
 
@@ -43,6 +44,7 @@ class RippleEngine:
         self.supply_risk_agent = SupplyRiskAgent()
         self.cold_chain_agent = ColdChainRiskMonitor()
         self.warehouse_agent = WarehouseAllocationAgent()
+        self.logistics_agent = LogisticsCoordinationAgent()
 
         # reactive agents (invoked generically whenever their event types fire)
         self.reactive_agents = [
@@ -52,10 +54,11 @@ class RippleEngine:
             ShelfLifeBudgetAllocator(),
             PricingAgent(),
             DemandCannibalizationGuard(),
-            LogisticsCoordinationAgent(),
+            self.logistics_agent,
             ERPAutomationAgent(),
             WasteLedgerAgent(),
             FarmerCommitmentAdvisor(),
+            InterventionOptimizerAgent(),
         ]
         self.llm = llm_service
 
@@ -203,6 +206,27 @@ class RippleEngine:
                             cascade_id=cascade_id, parent_event_id=None, created_by_agent="Scenario Trigger")
         self._persist_event(conn, root_event, step_order=1)
         self._persist_decision(conn, root_event, self.warehouse_agent.name, result, mode, step_order=1, downstream_event_ids=[root_event.id])
+
+        self._propagate(conn, cascade_id, [root_event])
+        return cascade_id
+
+    def trigger_logistics_delay(self, conn, warehouse_id, delay_hours, disruption_type="TRUCK_BREAKDOWN"):
+        """Feature 5 — What-If / Counterfactual Simulator entry point for
+        Truck Breakdown / Heavy Rainfall / route-disruption scenarios.
+        Uses the real Ripple Engine + agent chain, not a canned result:
+        LOGISTICS_DELAY -> Warehouse exposure -> Shelf-Life pressure ->
+        Shelf-Life Allocator -> Pricing / Logistics / Intervention
+        Optimizer -> ERP -> Waste Ledger."""
+        wh = conn.execute("SELECT name FROM warehouses WHERE id=?", (warehouse_id,)).fetchone()
+        label = disruption_type.replace("_", " ").title()
+        trigger_desc = f"{label} adds a {delay_hours:.0f}h delay affecting {wh['name']}"
+        cascade_id = self._new_cascade(conn, disruption_type, trigger_desc)
+
+        result, mode = self.logistics_agent.detect_delay(conn, self.llm, warehouse_id, delay_hours, disruption_type)
+        root_event = Event(event_type=result.downstream_events[0][0], payload=result.downstream_events[0][1],
+                            cascade_id=cascade_id, parent_event_id=None, created_by_agent="Scenario Trigger")
+        self._persist_event(conn, root_event, step_order=1)
+        self._persist_decision(conn, root_event, self.logistics_agent.name, result, mode, step_order=1, downstream_event_ids=[root_event.id])
 
         self._propagate(conn, cascade_id, [root_event])
         return cascade_id
