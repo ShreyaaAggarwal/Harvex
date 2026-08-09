@@ -57,6 +57,11 @@ class DemandCannibalizationGuard(Agent):
             "risk_level": risk_level,
             "at_risk_substitute": at_risk_substitute,
             "recommendation": "PROCEED" if risk_level != "HIGH" else "PROCEED_WITH_CAPPED_MARKDOWN",
+            "evidence": [
+                f"Markdown depth {markdown_pct:.0f}% \u2192 diversion risk estimated at {diversion_risk_pct:.0f}% ({risk_level.lower()})",
+                f"Nearest substitute by category: {at_risk_substitute or 'none identified'}",
+                f"Substitute group: {', '.join(substitutes) if substitutes else 'none in category'}",
+            ],
         }
         fallback = (
             f"A {markdown_pct:.0f}% markdown on {product['name']} carries an estimated {diversion_risk_pct:.0f}% "

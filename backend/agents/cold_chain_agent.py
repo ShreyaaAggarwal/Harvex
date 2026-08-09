@@ -47,6 +47,11 @@ class ColdChainRiskMonitor(Agent):
             "severity": severity,
             "affected_batch_ids": [b["id"] for b in affected],
             "affected_kg": round(affected_kg, 1),
+            "evidence": [
+                f"{observed:.1f}\u00b0C observed vs {target:.1f}\u00b0C target ({excursion_c:+.1f}\u00b0C excursion)",
+                f"{len(affected)} batch(es) in {wh['name']} exposed, {affected_kg:.0f} kg total",
+                f"Classified {severity} severity",
+            ],
         }
         fallback = (
             f"{wh['name']} recorded {observed:.1f}°C against a {target:.1f}°C target ({excursion_c:+.1f}°C excursion), "

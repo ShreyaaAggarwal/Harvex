@@ -63,6 +63,12 @@ class WarehouseAllocationAgent(Agent):
 
         product = conn.execute("SELECT * FROM products WHERE id=?", (product_id,)).fetchone() if product_id else None
 
+        evidence = [
+            f"{total_kg:.0f} kg on hand across {len(batches)} batch(es), classified {exposure_type}",
+            f"{len(strict_at_risk)} batch(es) at \u22643 days calendar shelf life",
+            f"Triggered by {event.event_type.replace('_',' ').title()}",
+        ]
+
         decision = {
             "event": "INVENTORY_EXPOSURE",
             "product": product["name"] if product else "Multiple",
@@ -74,6 +80,7 @@ class WarehouseAllocationAgent(Agent):
             "batch_ids": [b["id"] for b in batches],
             "at_risk_batch_ids": [b["id"] for b in priority_batches],
             "trigger": event.event_type,
+            "evidence": evidence,
         }
         fallback = (
             f"{decision['product']} shows {total_kg:.0f} kg on hand classified as {exposure_type}; "
@@ -119,6 +126,11 @@ class WarehouseAllocationAgent(Agent):
             "batch_ids": [b["id"] for b in batches],
             "at_risk_batch_ids": [b["id"] for b in at_risk],
             "trigger": "INTERNAL_SCAN",
+            "evidence": [
+                f"Routine scan of {len(batches)} in-stock batch(es) for {product['name']}",
+                f"{len(at_risk)} soonest-expiring batch(es) selected, {at_risk_kg:.0f} kg total",
+                "No demand or supply trigger involved — internal shelf-life discipline only",
+            ],
         }
         fallback = (
             f"Routine shelf-life scan found {len(at_risk)} {product['name']} batch(es), {at_risk_kg:.0f} kg total, "

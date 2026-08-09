@@ -40,6 +40,11 @@ class PricingAgent(Agent):
             "move_now_kg": round(move_now_kg, 0),
             "markdown_window_kg": round(window_kg, 0),
             "allocated_batches": p["allocated_batches"],
+            "evidence": [
+                f"{move_now_kg:.0f} kg at MOVE_NOW priority, {window_kg:.0f} kg in the markdown window (of {total_kg:.0f} kg allocated)",
+                f"Urgency ratio {urgency_ratio*100:.0f}% \u2192 sized to a {markdown_pct:.0f}% markdown",
+                f"Base price \u20b9{base_price:.2f}/kg \u2192 \u20b9{new_price:.2f}/kg",
+            ],
         }
         fallback = (
             f"Recommending a {markdown_pct:.0f}% markdown on {product['name']} (₹{base_price:.2f} → ₹{new_price:.2f}/kg), "
@@ -58,10 +63,15 @@ class PricingAgent(Agent):
         )
         conn.commit()
 
+        requires_approval = markdown_pct >= 20
         actions = [{
             "action_type": "APPLY_MARKDOWN",
-            "payload": {"product": product["name"], "old_price": base_price, "new_price": new_price, "markdown_pct": markdown_pct},
-            "requires_approval": markdown_pct >= 20,
+            "payload": {
+                "product": product["name"], "old_price": base_price, "new_price": new_price, "markdown_pct": markdown_pct,
+                "risk_level": "HIGH" if markdown_pct >= 25 else ("MEDIUM" if requires_approval else "LOW"),
+                "reason": f"{markdown_pct:.0f}% markdown exceeds the 20% auto-execute threshold" if requires_approval else "Within auto-execute threshold",
+            },
+            "requires_approval": requires_approval,
         }]
 
         return AgentResult(

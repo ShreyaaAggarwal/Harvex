@@ -65,6 +65,27 @@ class WasteLedgerAgent(Agent):
         waste_avoided = round(baseline_waste - harvex_waste, 1)
         value_preserved = round(waste_avoided * price_per_kg, 0)
         utilization_pct = round(100 * (1 - (harvex_waste / total_kg)), 1)
+        base_price = product["base_price_per_kg"] if product else price_per_kg
+        value_at_risk = round(baseline_waste * base_price, 0)
+        value_saved_vs_baseline = round(harvex_waste * base_price, 0)
+        affected_batches = len(p["moves"])
+
+        # the without/with comparison the Ripple Console's Impact Simulation
+        # card renders directly — same numbers as the ledger row, just framed
+        # as a counterfactual instead of a single "impact" figure.
+        counterfactual = {
+            "without_harvex": {
+                "waste_kg": round(baseline_waste, 1),
+                "value_at_risk_inr": value_at_risk,
+                "affected_batches": affected_batches,
+            },
+            "with_harvex": {
+                "waste_kg": round(harvex_waste, 1),
+                "value_preserved_inr": value_preserved,
+                "affected_batches": affected_batches,
+            },
+            "label": "Simulation / Estimated Impact",
+        }
 
         conn.execute(
             "INSERT INTO waste_ledger (cascade_id, product_id, baseline_waste_kg, harvex_waste_kg, waste_avoided_kg, "

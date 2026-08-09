@@ -43,6 +43,11 @@ class SupplyRiskAgent(Agent):
             "shortfall_pct": shortfall_pct,
             "exposed_kg": round(exposed_kg, 1),
             "severity": severity,
+            "evidence": [
+                f"{len(open_orders)} open order(s) with {supplier['name']} for {product['name']}",
+                f"Projected shortfall {shortfall_pct:.0f}% \u2192 {exposed_kg:.0f} kg exposed",
+                f"Supplier reliability score {supplier['reliability_score']:.2f}",
+            ],
         }
         fallback = (
             f"{supplier['name']} is projected to under-deliver {product['name']} by {shortfall_pct:.0f}%, "

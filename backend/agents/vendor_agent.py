@@ -56,6 +56,11 @@ class VendorRenegotiationAgent(Agent):
             "recommended_action": action,
             "quantity_adjustment_kg": adj_kg,
             "supplier_reliability": orders["reliability_score"],
+            "evidence": [
+                f"Open order: {orders['quantity_kg']:.0f} kg with {orders['supplier_name']}, delivery {orders['delivery_date']}",
+                f"Supplier reliability score {orders['reliability_score']:.2f}",
+                f"Triggered by {event.event_type.replace('_',' ').title()}",
+            ],
         }
         fallback = (
             f"Existing order with {orders['supplier_name']} for {product['name']} ({orders['quantity_kg']:.0f} kg, "
@@ -69,7 +74,10 @@ class VendorRenegotiationAgent(Agent):
 
         actions = [{
             "action_type": "VENDOR_ACTION_" + action,
-            "payload": {"supplier": orders["supplier_name"], "order_id": orders["id"], "quantity_adjustment_kg": adj_kg},
+            "payload": {
+                "supplier": orders["supplier_name"], "order_id": orders["id"], "quantity_adjustment_kg": adj_kg,
+                "risk_level": "HIGH", "reason": "Vendor commitment changes always require manager sign-off",
+            },
             "requires_approval": True,
         }]
 

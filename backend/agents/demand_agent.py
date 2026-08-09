@@ -47,6 +47,10 @@ class DemandSensingAgent(Agent):
             "direction": direction,
             "change_pct": change_pct,
             "severity": severity,
+            "evidence": [
+                f"New demand signal logged for {product['name']} in {region}: {change_pct:+.1f}% vs trailing baseline",
+                f"Classified {severity} severity {direction.lower()}",
+            ],
         }
         fallback = (
             f"{product['name']} demand in {region} moved {change_pct:+.1f}% against the trailing baseline — "
