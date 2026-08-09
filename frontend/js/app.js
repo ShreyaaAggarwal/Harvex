@@ -3,7 +3,9 @@
    Vanilla JS, no build step. Talks to the Flask API on the same origin.
    ========================================================================= */
 
-const API = "https://harvex-backend-ftnn.onrender.com/api";
+const API = (typeof window !== "undefined" && window.HARVEX_API_BASE
+  ? window.HARVEX_API_BASE
+  : "https://harvex-backend-ftnn.onrender.com") + "/api";
 
 const state = {
   view: "overview",
@@ -90,6 +92,7 @@ const VIEW_TITLES = {
   inventory: ["Inventory", "Batches across all warehouses, ranked by shelf-life urgency"],
   procurement: ["Procurement & Risk", "Open commitments and active supply risk"],
   logistics: ["Logistics", "Movement priority derived from remaining economic value"],
+  coldchain: ["Cold-Chain", "Live warehouse temperature/humidity status and breach response"],
   waste: ["Waste Ledger", "Estimated waste avoided and value preserved"],
   agents: ["Agent Activity", "Every agent decision, across every cascade"],
 };
@@ -113,6 +116,7 @@ function loadView(view) {
   if (view === "inventory") return loadInventory();
   if (view === "procurement") return loadProcurement();
   if (view === "logistics") return loadLogistics();
+  if (view === "coldchain") return loadColdChain();
   if (view === "waste") return loadWaste();
   if (view === "agents") return loadAgents();
 }
@@ -191,12 +195,13 @@ async function loadRippleConsole() {
   if (!state.scenarios.length) {
     state.scenarios = await api("/scenarios");
   }
-  $("#scenarioButtons").innerHTML = state.scenarios.map(s => `
-    <button class="scenario-btn" data-id="${s.id}">
-      <span class="scenario-btn-title">⚡ ${escapeHtml(s.label)}</span>
+  $("#scenarioButtons").innerHTML = state.scenarios.map(s => {
+    const hasOwnIcon = /^\p{Extended_Pictographic}/u.test(s.label);
+    return `<button class="scenario-btn" data-id="${s.id}">
+      <span class="scenario-btn-title">${hasOwnIcon ? "" : "⚡ "}${escapeHtml(s.label)}</span>
       <span class="scenario-btn-desc">${escapeHtml(s.description)}</span>
-    </button>
-  `).join("");
+    </button>`;
+  }).join("");
   $all(".scenario-btn").forEach(btn => btn.addEventListener("click", () => runScenario(btn.dataset.id)));
 
   await refreshCascadeHistory();
@@ -381,6 +386,7 @@ function renderTrace(steps, cascadeId) {
           <span>Confidence <b>${Math.round(s.confidence * 100)}%</b><span class="confidence-track"><span class="confidence-fill" style="width:${Math.round(s.confidence*100)}%"></span></span></span>
         </div>
         ${actionsHtml ? `<div class="trace-actions">${actionsHtml}</div>` : ""}
+        ${decisionExtrasHtml(s.decision)}
         ${downstreamHtml}
       </div>
     </div>`;
@@ -542,6 +548,7 @@ function renderProvenance(data, target) {
         <div class="trace-row" style="margin-top:6px;">
           <span>Confidence <b>${Math.round(target.confidence * 100)}%</b><span class="confidence-track"><span class="confidence-fill" style="width:${Math.round(target.confidence * 100)}%"></span></span></span>
         </div>
+        ${decisionExtrasHtml(target.decision)}
       </div>
     </div>`;
 
@@ -646,6 +653,15 @@ async function loadPriorityQueue() {
   $all(".pq-card").forEach(card => {
     card.addEventListener("click", () => loadFreshnessLookup(Number(card.dataset.batch)));
   });
+
+  // Useful default state: auto-open the single most urgent real batch on
+  // first visit, instead of leaving the lookup panel empty.
+  if (!state.activePqBatch) {
+    const firstUrgent = PQ_BUCKETS.map(b => data.groups[b.key] || []).find(list => list.length);
+    if (firstUrgent && firstUrgent.length) {
+      loadFreshnessLookup(firstUrgent[0].batch_id);
+    }
+  }
 }
 
 async function ensureInventoryIndex() {
@@ -927,6 +943,100 @@ async function loadLogistics() {
 }
 
 // ---------------------------------------------------------------------
+// Cold-Chain Risk Monitor
+// ---------------------------------------------------------------------
+
+async function loadColdChain() {
+  const [readings, warehouses, cascades] = await Promise.all([
+    api("/cold-chain"), api("/warehouses"), api("/cascades"),
+  ]);
+
+  const coldWh = warehouses.filter(w => w.cold_chain_enabled);
+  const breachReadings = readings.filter(r => r.is_breach);
+  const breachCascades = cascades.filter(c => c.scenario_type === "COLD_CHAIN_BREACH");
+
+  // readings arrive newest-first from the API; keep the first (=latest) per warehouse
+  const latestByWarehouse = {};
+  readings.forEach(r => {
+    if (!latestByWarehouse[r.warehouse_id]) latestByWarehouse[r.warehouse_id] = r;
+  });
+
+  $("#coldChainKpiRow").innerHTML = `
+    <div class="kpi-card">
+      <div class="kpi-label">Cold-Chain Warehouses</div>
+      <div class="kpi-value">${coldWh.length}</div>
+      <div class="kpi-sub">of ${warehouses.length} total warehouses</div>
+    </div>
+    <div class="kpi-card accent-terracotta">
+      <div class="kpi-label">Breach Readings</div>
+      <div class="kpi-value">${breachReadings.length}</div>
+      <div class="kpi-sub">of ${readings.length} recent readings</div>
+    </div>
+    <div class="kpi-card accent-terracotta">
+      <div class="kpi-label">Breach Cascades</div>
+      <div class="kpi-value">${breachCascades.length}</div>
+      <div class="kpi-sub">triggered the Ripple Engine</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Warehouses Reporting</div>
+      <div class="kpi-value">${Object.keys(latestByWarehouse).length}</div>
+      <div class="kpi-sub">with at least one reading</div>
+    </div>
+  `;
+
+  $("#coldChainWarehouseGrid").innerHTML = coldWh.length ? coldWh.map(w => {
+    const latest = latestByWarehouse[w.id];
+    if (!latest) {
+      return `<div class="cc-card">
+        <div class="cc-card-head"><div class="cc-card-name">${escapeHtml(w.name)}</div><span class="badge badge-monitor">No readings yet</span></div>
+        <div class="cc-card-sub">${escapeHtml(w.region)}</div>
+      </div>`;
+    }
+    const delta = latest.temperature_c - latest.target_temperature_c;
+    return `<div class="cc-card ${latest.is_breach ? "cc-breach" : ""}">
+      <div class="cc-card-head">
+        <div class="cc-card-name">${escapeHtml(w.name)}</div>
+        <span class="badge ${latest.is_breach ? "badge-urgent" : "badge-monitor"}">${latest.is_breach ? "Breach" : "Normal"}</span>
+      </div>
+      <div class="cc-card-sub">${escapeHtml(w.region)} · updated ${timeAgo(latest.recorded_at)}</div>
+      <div class="cc-temp-row">
+        <div class="cc-temp"><span>Observed</span><b>${latest.temperature_c.toFixed(1)}°C</b></div>
+        <div class="cc-temp"><span>Target</span><b>${latest.target_temperature_c.toFixed(1)}°C</b></div>
+        <div class="cc-temp"><span>Δ</span><b class="${delta > 0.5 ? "cc-delta-bad" : "cc-delta-ok"}">${delta >= 0 ? "+" : ""}${delta.toFixed(1)}°C</b></div>
+      </div>
+      <div class="cc-bar-track"><div class="cc-bar-fill ${latest.is_breach ? "bad" : "ok"}" style="width:${Math.max(6, Math.min(100, 50 + delta * 10))}%"></div></div>
+      <div class="cc-card-meta">Humidity ${latest.humidity_pct.toFixed(0)}%</div>
+    </div>`;
+  }).join("") : `<div class="empty-state"><p>No cold-chain-enabled warehouses configured.</p></div>`;
+
+  $("#coldChainIncidents").innerHTML = breachCascades.length ? breachCascades.map(c => `
+    <div class="cascade-row" data-id="${c.id}">
+      <div class="cascade-row-main">
+        <div class="cascade-row-title">${escapeHtml(c.trigger_description)}</div>
+        <div class="cascade-row-meta">${escapeHtml(c.scenario_type)} · ${timeAgo(c.started_at)} · click for full agent response</div>
+      </div>
+      <span class="badge ${c.status === "IN_PROGRESS" ? "badge-progress" : "badge-complete"}">${c.status.replace("_"," ")}</span>
+    </div>
+  `).join("") : `<div class="empty-state"><p>No cold-chain breach cascades yet — trigger "Cold-Chain Breach" from the Ripple Console.</p></div>`;
+  $all("#coldChainIncidents .cascade-row").forEach(row => {
+    row.addEventListener("click", () => openCascade(Number(row.dataset.id)));
+  });
+
+  $("#coldChainTable tbody").innerHTML = readings.length ? readings.map(r => {
+    const delta = r.temperature_c - r.target_temperature_c;
+    return `<tr>
+      <td>${escapeHtml(r.warehouse_name)}</td>
+      <td class="mono">${timeAgo(r.recorded_at)}</td>
+      <td class="num">${r.temperature_c.toFixed(1)}°C</td>
+      <td class="num">${r.target_temperature_c.toFixed(1)}°C</td>
+      <td class="num ${delta > 0.5 ? "cc-delta-bad" : "cc-delta-ok"}">${delta >= 0 ? "+" : ""}${delta.toFixed(1)}°C</td>
+      <td class="num">${r.humidity_pct.toFixed(0)}%</td>
+      <td><span class="badge ${r.is_breach ? "badge-urgent" : "badge-monitor"}">${r.is_breach ? "BREACH" : "OK"}</span></td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="7"><div class="empty-state"><p>No cold-chain readings yet — trigger "Cold-Chain Breach" from the Ripple Console.</p></div></td></tr>`;
+}
+
+// ---------------------------------------------------------------------
 // Waste ledger
 // ---------------------------------------------------------------------
 
@@ -994,34 +1104,128 @@ async function refreshApprovalCount() {
   return rows;
 }
 
-async function openApprovalDrawer() {
-  const rows = await refreshApprovalCount();
-  $("#approvalList").innerHTML = rows.length ? rows.map(a => `
-    <div class="approval-card" data-id="${a.id}">
-      <div class="approval-title">${escapeHtml(a.action_type.replace(/_/g," "))}</div>
-      <div class="approval-meta">${escapeHtml(a.trigger_description || "")}</div>
-      <div class="approval-meta">${escapeHtml(a.payload.task || a.payload.product || JSON.stringify(a.payload).slice(0,80))}</div>
+// Numeric payload fields worth exposing for a manager to Modify, in
+// preference order. Falls back to the first remaining numeric field.
+// old_price is excluded — it's the "before" value, never the edited one.
+const MODIFY_FIELD_PRIORITY = ["quantity_change_kg", "new_target_kg", "new_price", "markdown_pct", "quantity_adjustment_kg"];
+function primaryModifyField(payload) {
+  for (const f of MODIFY_FIELD_PRIORITY) {
+    if (typeof payload[f] === "number") return f;
+  }
+  const entry = Object.entries(payload || {}).find(([k, v]) => typeof v === "number" && k !== "old_price");
+  return entry ? entry[0] : null;
+}
+
+function approvalCardHtml(a) {
+  const field = primaryModifyField(a.payload);
+  const confPct = a.agent_confidence !== null && a.agent_confidence !== undefined ? Math.round(a.agent_confidence * 100) : null;
+  const facts = [];
+  if (a.payload.product) facts.push([a.payload.product, "product"]);
+  if (a.payload.supplier) facts.push([a.payload.supplier, "supplier"]);
+  if (a.payload.batch_code) facts.push([a.payload.batch_code, "batch"]);
+  Object.entries(a.payload || {}).forEach(([k, v]) => {
+    if (typeof v === "number" && k !== "old_price") facts.push([v, k.replace(/_/g, " ")]);
+  });
+  const factsHtml = facts.length
+    ? `<div class="trace-row approval-facts">${facts.map(([val, label]) => `<span><b>${escapeHtml(String(val))}</b> ${escapeHtml(label)}</span>`).join("")}</div>`
+    : "";
+  const statusBadge = a.status !== "PENDING"
+    ? `<span class="badge ${a.status === "APPROVED" ? "badge-complete" : a.status === "REJECTED" ? "badge-urgent" : "badge-window"}">${escapeHtml(a.status)}</span>`
+    : "";
+
+  return `
+    <div class="approval-card" data-id="${a.id}" data-cascade="${a.cascade_id}" data-field="${field || ""}">
+      <div class="approval-card-head">
+        <div class="approval-title">${escapeHtml(a.action_type.replace(/_/g," "))}</div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          ${confPct !== null ? `<span class="tag tag-muted">conf ${confPct}%</span>` : ""}
+          ${statusBadge}
+        </div>
+      </div>
+      <div class="approval-meta">${escapeHtml(a.trigger_description || "")}${a.agent_name ? " · " + escapeHtml(a.agent_name) : ""}</div>
+      ${a.agent_reasoning ? `<div class="approval-reasoning">${escapeHtml(a.agent_reasoning)}</div>` : ""}
+      ${factsHtml}
       <div class="approval-actions">
         <button class="btn btn-primary btn-sm approve-btn">Approve</button>
         <button class="btn btn-ghost btn-sm reject-btn">Reject</button>
+        ${field ? `<button type="button" class="btn btn-ghost btn-sm modify-btn">Modify</button>` : ""}
+        <button type="button" class="btn btn-ghost btn-sm why-btn" data-cascade="${a.cascade_id}">Why?</button>
       </div>
-    </div>
-  `).join("") : `<div class="empty-state"><p>No actions awaiting approval.</p></div>`;
+      ${field ? `
+      <form class="modify-form">
+        <label class="modify-label">${escapeHtml(field.replace(/_/g," "))}</label>
+        <input type="number" step="any" class="modify-input" value="${a.payload[field]}" />
+        <button type="submit" class="btn btn-primary btn-sm">Save</button>
+        <button type="button" class="btn btn-ghost btn-sm modify-cancel">Cancel</button>
+      </form>` : ""}
+    </div>`;
+}
+
+async function openApprovalDrawer() {
+  const rows = await refreshApprovalCount();
+  $("#approvalList").innerHTML = rows.length ? rows.map(approvalCardHtml).join("") :
+    `<div class="empty-state"><p>No actions awaiting approval.</p></div>`;
 
   $all(".approve-btn").forEach(b => b.addEventListener("click", (e) => decideAction(e, "approve")));
   $all(".reject-btn").forEach(b => b.addEventListener("click", (e) => decideAction(e, "reject")));
 
+  $all(".modify-btn").forEach(b => b.addEventListener("click", (e) => {
+    const form = e.target.closest(".approval-card").querySelector(".modify-form");
+    if (form) form.classList.toggle("open");
+  }));
+  $all(".modify-cancel").forEach(b => b.addEventListener("click", (e) => {
+    e.target.closest(".modify-form").classList.remove("open");
+  }));
+  $all(".modify-form").forEach(form => {
+    form.addEventListener("submit", (e) => { e.preventDefault(); submitModify(form); });
+  });
+  $all("#approvalDrawer .why-btn").forEach(btn => {
+    btn.addEventListener("click", () => openProvenance(Number(btn.dataset.cascade)));
+  });
+
   $("#approvalDrawer").classList.add("open");
+}
+
+async function submitModify(form) {
+  const card = form.closest(".approval-card");
+  const id = card.dataset.id;
+  const field = card.dataset.field;
+  const raw = form.querySelector(".modify-input").value;
+  const value = Number(raw);
+  if (!field || Number.isNaN(value)) { toast("Enter a valid number"); return; }
+  const btn = form.querySelector("button[type=submit]");
+  btn.disabled = true;
+  try {
+    await api(`/actions/${id}/modify`, { method: "POST", body: JSON.stringify({ field, value }) });
+    toast("Action modified and marked as approved-with-changes");
+    refreshApprovalCount();
+    openApprovalDrawer();
+    loadView(state.view);
+  } catch (err) {
+    toast("Error: " + err.message);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function decideAction(e, decision) {
   const card = e.target.closest(".approval-card");
   const id = card.dataset.id;
-  await api(`/actions/${id}/${decision}`, { method: "POST" });
-  toast(decision === "approve" ? "Action approved" : "Action rejected");
-  card.remove();
-  refreshApprovalCount();
-  if (state.view === "overview") loadOverview();
+  const btns = card.querySelectorAll("button");
+  btns.forEach(b => b.disabled = true);
+  try {
+    await api(`/actions/${id}/${decision}`, { method: "POST" });
+    toast(decision === "approve" ? "Action approved" : "Action rejected");
+    card.remove();
+    if (!$("#approvalList").children.length) {
+      $("#approvalList").innerHTML = `<div class="empty-state"><p>No actions awaiting approval.</p></div>`;
+    }
+    refreshApprovalCount();
+    loadView(state.view);
+  } catch (err) {
+    toast("Error: " + err.message);
+    btns.forEach(b => b.disabled = false);
+  }
 }
 
 // ---------------------------------------------------------------------

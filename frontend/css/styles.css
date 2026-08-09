@@ -376,9 +376,24 @@ button{ font-family: inherit; }
 .drawer-close{ background:none; border:none; font-size:16px; cursor:pointer; color: var(--charcoal-45); }
 .approval-list{ overflow-y:auto; padding: 14px 16px; display:flex; flex-direction:column; gap:10px; }
 .approval-card{ border:1px solid var(--line); border-radius: var(--radius-md); padding: 12px 14px; background:#fff; }
-.approval-title{ font-size:12.6px; font-weight:600; color: var(--olive-950); margin-bottom:4px; }
-.approval-meta{ font-size:11px; color: var(--charcoal-45); font-family: var(--font-mono); margin-bottom:9px; }
-.approval-actions{ display:flex; gap:8px; }
+.approval-card-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px; }
+.approval-title{ font-size:12.6px; font-weight:600; color: var(--olive-950); }
+.approval-meta{ font-size:11px; color: var(--charcoal-45); font-family: var(--font-mono); margin-bottom:8px; }
+.approval-reasoning{ font-size:12.2px; color: var(--charcoal-70); line-height:1.5; margin-bottom:9px; }
+.approval-facts{ margin-bottom:9px !important; }
+.approval-actions{ display:flex; gap:7px; flex-wrap:wrap; }
+
+.modify-form{
+  display:none; align-items:center; gap:8px; margin-top:10px; padding-top:10px;
+  border-top:1px dashed var(--line-strong); flex-wrap:wrap;
+}
+.modify-form.open{ display:flex; }
+.modify-label{ font-family: var(--font-mono); font-size:10.8px; text-transform:uppercase; letter-spacing:0.04em; color: var(--charcoal-45); }
+.modify-input{
+  width: 100px; font-family: var(--font-mono); font-size:12.6px; color: var(--charcoal);
+  background:#fff; border:1px solid var(--line-strong); border-radius: var(--radius-sm); padding: 6px 8px;
+}
+.modify-input:focus{ outline:none; border-color: var(--terracotta); box-shadow: 0 0 0 3px rgba(181,87,59,0.12); }
 
 .toast{
   position:fixed; left:50%; bottom: 26px; transform: translateX(-50%) translateY(20px);
@@ -667,6 +682,66 @@ input[type="text"]::placeholder{ color: var(--charcoal-45); }
 .timeline-pt.risk-low .timeline-risk{ color: var(--success); }
 
 .fb-note{ font-size:11.3px; color: var(--charcoal-45); line-height:1.6; margin-top:16px; padding-top:12px; border-top:1px dashed var(--line-strong); }
+
+/* =========================================================================
+   Cold-Chain Risk Monitor
+   ========================================================================= */
+
+.cc-warehouse-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap:14px; }
+.cc-card{
+  background:#fff; border:1px solid var(--line); border-radius: var(--radius-md);
+  padding: 14px 15px; transition: box-shadow .15s ease, border-color .15s ease;
+}
+.cc-card.cc-breach{ border-color:#E3B9AC; box-shadow: 0 0 0 1px rgba(154,51,36,0.08); }
+.cc-card-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.cc-card-name{ font-weight:600; font-size:13.4px; color: var(--olive-950); }
+.cc-card-sub{ font-size:11px; color: var(--charcoal-45); font-family: var(--font-mono); margin-top:2px; margin-bottom:12px; }
+.cc-temp-row{ display:flex; gap:14px; margin-bottom:9px; }
+.cc-temp{ display:flex; flex-direction:column; gap:2px; }
+.cc-temp span{ font-size:9.8px; text-transform:uppercase; letter-spacing:0.05em; color: var(--charcoal-45); font-weight:600; }
+.cc-temp b{ font-family: var(--font-display); font-size:15.5px; color: var(--olive-950); }
+.cc-delta-bad{ color: var(--danger) !important; }
+.cc-delta-ok{ color: var(--success) !important; }
+.cc-bar-track{ height:6px; background: var(--cream-deep); border-radius:3px; overflow:hidden; margin-bottom:8px; }
+.cc-bar-fill{ height:100%; border-radius:3px; }
+.cc-bar-fill.ok{ background: var(--success); }
+.cc-bar-fill.bad{ background: var(--danger); }
+.cc-card-meta{ font-size:11px; color: var(--charcoal-70); font-family: var(--font-mono); }
+
+/* =========================================================================
+   Route comparison / Intervention options / Counterfactual
+   (Feature 3/4/6 renderers — reused by Ripple trace and Provenance modal)
+   ========================================================================= */
+
+.route-compare{ display:flex; gap:10px; flex-wrap:wrap; }
+.route-card{
+  flex: 1 1 160px; background: var(--cream); border:1px solid var(--line-strong); border-radius: var(--radius-md);
+  padding: 10px 12px; font-size:11.8px;
+}
+.route-card.chosen{ border-color: var(--olive-600); box-shadow: inset 0 0 0 1px var(--olive-600); background:#fff; }
+.route-card-dest{ font-weight:700; font-size:12.4px; color: var(--olive-950); margin-bottom:6px; }
+.route-card-row{ display:flex; justify-content:space-between; gap:8px; padding:2px 0; color: var(--charcoal-70); }
+.route-card-row b{ font-family: var(--font-mono); color: var(--olive-900); }
+
+.intervention-options{ display:flex; flex-direction:column; gap:7px; margin-top:8px; }
+.intervention-row{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  background:#fff; border:1px solid var(--line); border-radius: var(--radius-md); padding: 9px 12px;
+}
+.intervention-row.recommended{ border-color: var(--olive-600); box-shadow: inset 2px 0 0 var(--olive-600); background: var(--cream); }
+.intervention-label{ font-size:12.6px; font-weight:600; color: var(--olive-950); }
+.intervention-detail{ font-size:11.2px; color: var(--charcoal-45); margin-top:1px; }
+.intervention-metrics{ display:flex; gap:12px; font-family: var(--font-mono); font-size:11.5px; color: var(--charcoal-70); white-space:nowrap; }
+
+.counterfactual{ display:flex; gap:12px; margin-top:9px; flex-wrap:wrap; }
+.cf-col{ flex:1 1 180px; border-radius: var(--radius-md); padding: 11px 13px; }
+.cf-without{ background:#F1D9D2; border:1px solid #E3B9AC; }
+.cf-with{ background:#E4EAD9; border:1px solid #CBD9B7; }
+.cf-title{ font-family: var(--font-mono); font-size:10.5px; text-transform:uppercase; letter-spacing:0.05em; font-weight:700; margin-bottom:8px; }
+.cf-without .cf-title{ color: var(--danger); }
+.cf-with .cf-title{ color: var(--success); }
+.cf-stat{ display:flex; justify-content:space-between; font-size:12px; padding:3px 0; color: var(--charcoal-70); }
+.cf-stat b{ font-family: var(--font-mono); color: var(--olive-950); }
 
 @media (max-width: 880px){
   .app-shell{ grid-template-columns: 1fr; }
