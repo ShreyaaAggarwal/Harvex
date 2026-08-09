@@ -243,7 +243,7 @@ async function openCascade(cascadeId, skipViewSwitch) {
     <span>Steps <b>${data.steps.length}</b></span>
   `;
 
-  renderTrace(data.steps);
+  renderTrace(data.steps, cascadeId);
 }
 
 // ---- decision fact formatters, keyed by decision.event ----
@@ -270,7 +270,7 @@ function decisionFacts(decision) {
   return facts.filter(([, v]) => v !== undefined && v !== null && v !== "");
 }
 
-function renderTrace(steps) {
+function renderTrace(steps, cascadeId) {
   const container = $("#traceContainer");
   if (!steps.length) {
     container.innerHTML = `<div class="empty-state"><p>No steps recorded for this cascade.</p></div>`;
@@ -299,7 +299,10 @@ function renderTrace(steps) {
       <div class="trace-card">
         <div class="trace-card-head">
           <span class="trace-agent"><span class="agent-dot"></span>${escapeHtml(s.agent)}</span>
-          <span class="trace-event-type">${escapeHtml(s.trigger_event.type || "")}</span>
+          <span style="display:flex;align-items:center;gap:8px;">
+            <span class="trace-event-type">${escapeHtml(s.trigger_event.type || "")}</span>
+            <button class="why-btn" data-cascade="${cascadeId}" data-step="${s.step_order}">Why?</button>
+          </span>
         </div>
         <div class="trace-reasoning">${escapeHtml(s.reasoning)}${modeTag}</div>
         <div class="trace-row">${factsHtml}</div>
@@ -313,6 +316,195 @@ function renderTrace(steps) {
   }).join("");
 
   container.innerHTML = `<div class="trace-flow">${html}</div>`;
+
+  $all("#traceContainer .why-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openProvenance(Number(btn.dataset.cascade), Number(btn.dataset.step));
+    });
+  });
+}
+
+// ---------------------------------------------------------------------
+// Decision Provenance (Feature 1 — "Why did HARVEX do this?")
+// Built entirely from /api/cascades/<id>/trace — no fabricated reasoning,
+// only the real evidence/reasoning/actions/impact each agent already
+// produced, reorganized as: Signal -> Data/Factors -> Agents Involved ->
+// Decision -> Action -> Expected Outcome / Risk Reduced.
+// ---------------------------------------------------------------------
+
+function capitalize(s) {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+// Picks which decision in the cascade is the "headline" one being explained,
+// when the caller didn't point at a specific step (e.g. a Waste Ledger or
+// Logistics row only knows the cascade, not a step_order). Prefers the last
+// decision that actually carried an action, since that's the concrete thing
+// HARVEX did; falls back to the last decision recorded.
+function pickDefaultStep(steps) {
+  for (let i = steps.length - 1; i >= 0; i--) {
+    if (steps[i].actions && steps[i].actions.length) return steps[i];
+  }
+  return steps[steps.length - 1] || null;
+}
+
+function agentOneLiner(step) {
+  const text = step.reasoning || "";
+  return text.length > 160 ? text.slice(0, 157) + "…" : text;
+}
+
+function findWasteOutcome(steps) {
+  return steps.find(s => s.decision && s.decision.event === "WASTE_IMPACT_ESTIMATED" && s.decision.waste_avoided_kg !== undefined);
+}
+
+function provenanceFacts(decision) {
+  if (Array.isArray(decision.evidence) && decision.evidence.length) {
+    return decision.evidence;
+  }
+  return decisionFacts(decision).map(([label, val]) => `${label}: ${val}`);
+}
+
+function decisionHeadline(decision) {
+  if (!decision) return "act";
+  switch (decision.event) {
+    case "PROCUREMENT_ADJUSTED": {
+      const verb = decision.recommended_action === "REDUCE_PROCUREMENT" ? "reduce"
+        : decision.recommended_action === "INCREASE_PROCUREMENT" ? "increase" : "adjust";
+      return `${verb} ${decision.product || ""} procurement`;
+    }
+    case "PRICING_RECOMMENDED":
+      return `apply a ${fmtPct(decision.markdown_pct)} markdown on ${decision.product || ""}`;
+    case "LOGISTICS_PRIORITIZED":
+      return `prioritize movement of ${decision.product || ""}`;
+    case "VENDOR_RENEGOTIATION_RECOMMENDED":
+      return `${(decision.recommended_action || "renegotiate").replace(/_/g, " ").toLowerCase()} with ${decision.supplier || "this supplier"}`;
+    case "SHELF_LIFE_ALLOCATED":
+      return `allocate shelf-life budget for ${decision.product || ""}`;
+    case "INVENTORY_EXPOSURE":
+      return `flag ${(decision.exposure_type || "exposure").toLowerCase()} for ${decision.product || ""}`;
+    case "COLD_CHAIN_BREACH":
+      return `escalate a cold-chain breach at ${decision.warehouse || "this warehouse"}`;
+    case "DEMAND_SHOCK":
+      return `flag a demand ${decision.direction === "DROP" ? "drop" : "spike"} for ${decision.product || ""}`;
+    case "SUPPLY_RISK_DETECTED":
+      return `flag a supply risk on ${decision.product || ""}`;
+    case "CANNIBALIZATION_FLAGGED":
+      return `review markdown cannibalization risk for ${decision.product || ""}`;
+    case "WASTE_IMPACT_ESTIMATED":
+      return `estimate waste impact for ${decision.product || "this cascade"}`;
+    case "ERP_ACTION_GENERATED":
+      return `generate an ERP action for ${decision.source_event ? decision.source_event.replace(/_/g, " ").toLowerCase() : "this decision"}`;
+    default:
+      return (decision.event || "act").replace(/_/g, " ").toLowerCase();
+  }
+}
+
+async function openProvenance(cascadeId, stepOrder) {
+  $("#provenanceModal").classList.add("open");
+  $("#provenanceTitle").textContent = "Why did HARVEX do this?";
+  $("#provenanceBody").innerHTML = `<div class="empty-state"><p>Loading decision trail…</p></div>`;
+  try {
+    const data = await api(`/cascades/${cascadeId}/trace`);
+    const steps = data.steps;
+    const target = (stepOrder != null && !Number.isNaN(stepOrder) ? steps.find(s => s.step_order === stepOrder) : null) || pickDefaultStep(steps);
+    if (!target) {
+      $("#provenanceBody").innerHTML = `<div class="empty-state"><p>No decision steps recorded for this cascade.</p></div>`;
+      return;
+    }
+    renderProvenance(data, target);
+  } catch (e) {
+    $("#provenanceBody").innerHTML = `<div class="empty-state"><p>Could not load decision trail: ${escapeHtml(e.message)}</p></div>`;
+  }
+}
+
+function renderProvenance(data, target) {
+  const c = data.cascade;
+  const steps = data.steps;
+
+  $("#provenanceTitle").textContent = "Why did HARVEX " + capitalize(decisionHeadline(target.decision)) + "?";
+
+  // 1. SIGNAL — the real trigger that started this cascade, grounded in cascades.trigger_description
+  const root = steps[0];
+  const signalHtml = `
+    <div class="prov-section">
+      <div class="prov-section-title"><span class="prov-num">1</span> Signal</div>
+      <div class="prov-signal-line">${escapeHtml(c.trigger_description)}</div>
+      <div class="prov-signal-sub">Detected as <b class="mono">${escapeHtml((root && root.trigger_event.type) || c.scenario_type)}</b> · cascade #${c.id} · ${escapeHtml(c.scenario_type)} · started ${escapeHtml(timeAgo(c.started_at))}</div>
+    </div>`;
+
+  // 2. DATA / FACTORS — this decision's own grounded evidence (or its key facts if no evidence array)
+  const facts = provenanceFacts(target.decision || {});
+  const factsHtml = `
+    <div class="prov-section">
+      <div class="prov-section-title"><span class="prov-num">2</span> Data &amp; Factors</div>
+      <div class="prov-facts">
+        ${facts.length ? facts.map(f => `<div class="prov-fact-row">${escapeHtml(String(f))}</div>`).join("") : `<div class="prov-none">No structured evidence recorded for this decision.</div>`}
+      </div>
+    </div>`;
+
+  // 3. AGENTS INVOLVED — every agent that actually fired in this cascade, each with its own real reasoning line
+  const agentsHtml = `
+    <div class="prov-section">
+      <div class="prov-section-title"><span class="prov-num">3</span> Agents Involved</div>
+      ${steps.map(s => `
+        <div class="prov-agent-row">
+          <div class="prov-agent-name"><span class="agent-dot"></span>${escapeHtml(s.agent)}</div>
+          <div class="prov-agent-text">${escapeHtml(agentOneLiner(s))}</div>
+        </div>
+      `).join("")}
+    </div>`;
+
+  // 4. DECISION — the specific decision being explained
+  const dFacts = decisionFacts(target.decision || {});
+  const decisionHtml = `
+    <div class="prov-section">
+      <div class="prov-section-title"><span class="prov-num">4</span> Decision</div>
+      <div class="prov-decision-box">
+        <div class="prov-decision-headline">${escapeHtml(capitalize(decisionHeadline(target.decision)))}</div>
+        <div class="prov-decision-reasoning">${escapeHtml(target.reasoning)}</div>
+        <div class="trace-row">${dFacts.map(([label, val]) => `<span><b>${escapeHtml(String(val))}</b> ${escapeHtml(label)}</span>`).join("")}</div>
+        <div class="trace-row" style="margin-top:6px;">
+          <span>Confidence <b>${Math.round(target.confidence * 100)}%</b><span class="confidence-track"><span class="confidence-fill" style="width:${Math.round(target.confidence * 100)}%"></span></span></span>
+        </div>
+      </div>
+    </div>`;
+
+  // 5. ACTION — what HARVEX actually queued/executed for this decision
+  const actions = target.actions || [];
+  const actionsHtml = `
+    <div class="prov-section">
+      <div class="prov-section-title"><span class="prov-num">5</span> Action</div>
+      ${actions.length ? `<div class="trace-actions">${actions.map(a => {
+        const cls = a.requires_approval ? "needs-approval" : "auto";
+        const label = a.action_type.replace(/_/g, " ").toLowerCase();
+        const statusLabel = a.status === "PENDING" ? "awaiting approval" : a.status === "AUTO_EXECUTED" ? "auto-executed" : a.status.toLowerCase();
+        return `<span class="action-chip ${cls}">${a.requires_approval ? "⏸" : "✓"} ${escapeHtml(label)} — ${statusLabel}</span>`;
+      }).join("")}</div>` : `<div class="prov-none">No direct action taken — informational finding only.</div>`}
+    </div>`;
+
+  // 6. EXPECTED OUTCOME / RISK REDUCED — real waste-ledger figures for this cascade if they exist
+  const wasteStep = findWasteOutcome(steps);
+  let outcomeInner;
+  if (wasteStep) {
+    const d = wasteStep.decision;
+    outcomeInner = `
+      <span class="tag tag-warn">Simulation / estimated impact</span>
+      <div class="prov-outcome-metrics">
+        <div><div class="prov-outcome-metric-label">Waste avoided</div><div class="prov-outcome-metric-value">${fmtKg(d.waste_avoided_kg)}</div></div>
+        <div><div class="prov-outcome-metric-label">Value preserved</div><div class="prov-outcome-metric-value">${fmtINR(d.value_preserved_inr)}</div></div>
+        <div><div class="prov-outcome-metric-label">Shelf-life util.</div><div class="prov-outcome-metric-value">${fmtPct(d.shelf_life_utilization_pct)}</div></div>
+      </div>`;
+  } else {
+    outcomeInner = `<p class="prov-outcome-empty">No quantified waste/value outcome has been recorded for this cascade yet.</p>`;
+  }
+  const outcomeHtml = `
+    <div class="prov-section">
+      <div class="prov-section-title"><span class="prov-num">6</span> Expected Outcome / Risk Reduced</div>
+      <div class="prov-outcome-banner">${outcomeInner}</div>
+    </div>`;
+
+  $("#provenanceBody").innerHTML = signalHtml + factsHtml + agentsHtml + decisionHtml + actionsHtml + outcomeHtml;
 }
 
 // ---------------------------------------------------------------------
@@ -381,8 +573,13 @@ async function loadLogistics() {
       <td><span class="badge ${pClass}">${escapeHtml(l.priority.replace("_"," "))}</span></td>
       <td><span class="badge badge-monitor">${escapeHtml(l.status)}</span></td>
       <td class="mono">${l.eta ? timeAgo(l.eta).replace("ago","out") : "—"}</td>
+      <td>${l.cascade_id ? `<button class="why-btn" data-cascade="${l.cascade_id}">Why?</button>` : ""}</td>
     </tr>`;
-  }).join("") : `<tr><td colspan="7"><div class="empty-state"><p>No logistics operations yet — run a scenario from the Ripple Console.</p></div></td></tr>`;
+  }).join("") : `<tr><td colspan="8"><div class="empty-state"><p>No logistics operations yet — run a scenario from the Ripple Console.</p></div></td></tr>`;
+
+  $all("#logisticsTable .why-btn").forEach(btn => {
+    btn.addEventListener("click", () => openProvenance(Number(btn.dataset.cascade)));
+  });
 }
 
 // ---------------------------------------------------------------------
@@ -417,7 +614,12 @@ async function loadWaste() {
       <td class="num" style="color:var(--success);font-weight:600;">${fmtNum(e.waste_avoided_kg)}</td>
       <td class="num">${fmtINR(e.value_preserved_inr)}</td>
       <td class="num">${fmtPct(e.shelf_life_utilization_pct)}</td>
-    </tr>`).join("") : `<tr><td colspan="7"><div class="empty-state"><p>No impact recorded yet — run a scenario from the Ripple Console.</p></div></td></tr>`;
+      <td>${e.cascade_id ? `<button class="why-btn" data-cascade="${e.cascade_id}">Why?</button>` : ""}</td>
+    </tr>`).join("") : `<tr><td colspan="8"><div class="empty-state"><p>No impact recorded yet — run a scenario from the Ripple Console.</p></div></td></tr>`;
+
+  $all("#wasteTable .why-btn").forEach(btn => {
+    btn.addEventListener("click", () => openProvenance(Number(btn.dataset.cascade)));
+  });
 }
 
 // ---------------------------------------------------------------------
@@ -488,6 +690,11 @@ async function init() {
   $("#quickSimBtn").addEventListener("click", () => setView("ripple"));
   $("#approvalToggle").addEventListener("click", openApprovalDrawer);
   $("#closeDrawer").addEventListener("click", () => $("#approvalDrawer").classList.remove("open"));
+
+  $("#closeProvenance").addEventListener("click", () => $("#provenanceModal").classList.remove("open"));
+  $("#provenanceModal").addEventListener("click", (e) => {
+    if (e.target.id === "provenanceModal") $("#provenanceModal").classList.remove("open");
+  });
 
   try {
     const meta = await api("/meta");

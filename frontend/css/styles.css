@@ -393,6 +393,83 @@ button{ font-family: inherit; }
 ::-webkit-scrollbar-thumb{ background: var(--line-strong); border-radius:5px; }
 ::-webkit-scrollbar-track{ background: transparent; }
 
+/* =========================================================================
+   Decision Provenance modal (Feature 1 — "Why did HARVEX do this?")
+   Reuses existing tokens/patterns (panel, tag, trace-row, action-chip,
+   confidence bar) so it reads as part of the same system, not a bolt-on.
+   ========================================================================= */
+
+.why-btn{
+  font-family: var(--font-mono); font-size: 10.6px; letter-spacing:0.03em;
+  padding: 4px 10px; border-radius: 20px; text-transform: uppercase;
+  background: var(--cream-deep); color: var(--olive-800); border:1px solid var(--line-strong);
+  cursor:pointer; white-space:nowrap; transition: all .15s ease;
+}
+.why-btn:hover{ background: var(--terracotta); border-color: var(--terracotta); color:#fff; }
+
+.modal-overlay{
+  position: fixed; inset: 0; background: rgba(35,30,15,0.45);
+  display:none; align-items:flex-start; justify-content:center;
+  padding: 6vh 20px; z-index: 70; overflow-y:auto;
+}
+.modal-overlay.open{ display:flex; }
+
+.modal-panel{
+  background: var(--cream-panel); border:1px solid var(--line); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2); width: 100%; max-width: 680px; max-height: 88vh;
+  display:flex; flex-direction:column; animation: fadeUp .25s ease;
+}
+.modal-head{
+  display:flex; align-items:flex-start; justify-content:space-between; gap:14px;
+  padding: 20px 24px 14px; border-bottom:1px solid var(--line); flex-shrink:0;
+}
+.modal-head h2{ font-size: 19px; margin-top:7px; line-height:1.3; }
+
+.provenance-body{ padding: 18px 24px 26px; overflow-y:auto; }
+
+.prov-section{ margin-bottom: 18px; padding-bottom:18px; border-bottom: 1px dashed var(--line-strong); }
+.prov-section:last-child{ border-bottom:none; margin-bottom:0; padding-bottom:0; }
+.prov-section-title{
+  font-family: var(--font-mono); font-size: 11px; letter-spacing:0.08em; text-transform:uppercase;
+  color: var(--terracotta-dk); font-weight:700; margin-bottom: 10px; display:flex; align-items:center; gap:9px;
+}
+.prov-num{
+  width:18px; height:18px; border-radius:50%; background: var(--olive-950); color:#F7F1E2;
+  font-size:10px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
+  font-family: var(--font-mono);
+}
+
+.prov-signal-line{ font-size: 14.5px; color: var(--olive-950); font-weight:600; line-height:1.5; margin-bottom:6px; }
+.prov-signal-sub{ font-size:12.2px; color: var(--charcoal-70); line-height:1.5; }
+
+.prov-facts{ display:flex; flex-direction:column; gap:6px; }
+.prov-fact-row{ font-size:13px; color: var(--charcoal-70); line-height:1.5; padding-left:15px; position:relative; }
+.prov-fact-row::before{ content:"—"; position:absolute; left:0; color: var(--olive-400); }
+
+.prov-agent-row{ display:flex; gap:14px; padding: 9px 0; border-bottom:1px solid var(--line); }
+.prov-agent-row:last-child{ border-bottom:none; }
+.prov-agent-name{ font-size:12.6px; font-weight:700; color: var(--olive-950); width: 188px; flex-shrink:0; display:flex; align-items:center; gap:7px; }
+.prov-agent-name .agent-dot{ width:6px; height:6px; border-radius:50%; background: var(--terracotta); flex-shrink:0; }
+.prov-agent-text{ font-size:12.6px; color: var(--charcoal-70); line-height:1.5; }
+
+.prov-decision-box{
+  background:#fff; border:1px solid var(--line-strong); border-radius: var(--radius-md);
+  padding: 14px 16px;
+}
+.prov-decision-headline{ font-family: var(--font-display); font-size:16px; color: var(--olive-950); font-weight:600; margin-bottom:8px; }
+.prov-decision-reasoning{ font-size:12.8px; color: var(--charcoal-70); line-height:1.55; margin-bottom:10px; }
+
+.prov-outcome-banner{
+  background: var(--clay-100); border:1px solid #E3C4A4; border-radius: var(--radius-md);
+  padding: 14px 16px;
+}
+.prov-outcome-metrics{ display:flex; gap: 24px; flex-wrap:wrap; margin-top:9px; }
+.prov-outcome-metric-label{ font-size:10.5px; text-transform:uppercase; letter-spacing:0.05em; color: var(--terracotta-dk); font-weight:600; }
+.prov-outcome-metric-value{ font-family: var(--font-display); font-size:18px; color: var(--olive-950); font-weight:600; margin-top:3px; }
+.prov-outcome-empty{ font-size:12.6px; color: var(--charcoal-70); }
+
+.prov-none{ font-size:12.6px; color: var(--charcoal-45); font-style:italic; }
+
 @media (max-width: 880px){
   .app-shell{ grid-template-columns: 1fr; }
   .sidenav{ position:relative; height:auto; flex-direction:row; align-items:center; overflow-x:auto; }

@@ -206,7 +206,7 @@
           </div>
           <div class="table-wrap">
             <table class="data-table" id="logisticsTable">
-              <thead><tr><th>Batch</th><th>Product</th><th>Origin</th><th>Destination</th><th>Priority</th><th>Status</th><th>ETA</th></tr></thead>
+              <thead><tr><th>Batch</th><th>Product</th><th>Origin</th><th>Destination</th><th>Priority</th><th>Status</th><th>ETA</th><th></th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -224,7 +224,7 @@
           <div class="panel-head"><h2>Impact Ledger</h2></div>
           <div class="table-wrap">
             <table class="data-table" id="wasteTable">
-              <thead><tr><th>Product</th><th>Trigger</th><th>Baseline (kg)</th><th>HARVEX (kg)</th><th>Avoided (kg)</th><th>₹ Preserved</th><th>Shelf-Life Util.</th></tr></thead>
+              <thead><tr><th>Product</th><th>Trigger</th><th>Baseline (kg)</th><th>HARVEX (kg)</th><th>Avoided (kg)</th><th>₹ Preserved</th><th>Shelf-Life Util.</th><th></th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -258,6 +258,22 @@
   <span id="approvalCount">0</span> pending
 </button>
 <div id="toast" class="toast"></div>
+
+<!-- Decision Provenance modal (Feature 1 — "Why did HARVEX do this?") -->
+<div id="provenanceModal" class="modal-overlay">
+  <div class="modal-panel provenance-panel">
+    <div class="modal-head">
+      <div>
+        <span class="tag tag-muted">Decision Provenance</span>
+        <h2 id="provenanceTitle">Why did HARVEX do this?</h2>
+      </div>
+      <button class="drawer-close" id="closeProvenance">✕</button>
+    </div>
+    <div id="provenanceBody" class="provenance-body">
+      <div class="empty-state"><p>Loading decision trail…</p></div>
+    </div>
+  </div>
+</div>
 
 <script src="js/app.js"></script>
 </body>
