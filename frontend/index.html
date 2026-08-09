@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>HARVEX — Autonomous Fresh-Produce Operations</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- ============ SIDE NAV ============ -->
+  <nav class="sidenav">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 40 40" width="30" height="30">
+          <path d="M20 4 C20 4 8 12 8 24 C8 32 13.5 37 20 37 C26.5 37 32 32 32 24 C32 12 20 4 20 4 Z" fill="none" stroke="currentColor" stroke-width="2"/>
+          <path d="M20 12 C20 12 20 22 20 34" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M20 18 C20 18 15 20 13.5 24" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M20 24 C20 24 25.5 26.5 27 30.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <div class="brand-name">HARVEX</div>
+        <div class="brand-sub">Fresh-Produce OS</div>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-label">Command</div>
+      <button class="nav-item active" data-view="overview">
+        <span class="nav-ico">◧</span> Overview
+      </button>
+      <button class="nav-item" data-view="ripple">
+        <span class="nav-ico">◎</span> Ripple Console
+      </button>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-label">Operations</div>
+      <button class="nav-item" data-view="inventory">
+        <span class="nav-ico">▤</span> Inventory
+      </button>
+      <button class="nav-item" data-view="procurement">
+        <span class="nav-ico">⇄</span> Procurement &amp; Risk
+      </button>
+      <button class="nav-item" data-view="logistics">
+        <span class="nav-ico">➤</span> Logistics
+      </button>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-label">Impact</div>
+      <button class="nav-item" data-view="waste">
+        <span class="nav-ico">✦</span> Waste Ledger
+      </button>
+      <button class="nav-item" data-view="agents">
+        <span class="nav-ico">≋</span> Agent Activity
+      </button>
+    </div>
+
+    <div class="nav-footer">
+      <div class="mode-pill" id="llmModePill">
+        <span class="dot"></span>
+        <span id="llmModeText">Checking mode…</span>
+      </div>
+      <div class="nav-footnote">Synthetic dataset · v1</div>
+    </div>
+  </nav>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 id="viewTitle">Operations Overview</h1>
+        <p id="viewSubtitle">Live state of the fresh-produce network</p>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-ghost" id="refreshBtn" title="Refresh data">⟳ Refresh</button>
+        <button class="btn btn-primary" id="quickSimBtn">⚡ Run Scenario</button>
+      </div>
+    </header>
+
+    <div class="view-scroll">
+
+      <!-- ================= OVERVIEW ================= -->
+      <section id="view-overview" class="view">
+        <div class="kpi-row" id="kpiRow"><!-- injected --></div>
+
+        <div class="grid-2col">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Recent Cascades</h2>
+              <span class="panel-note">Click to inspect the explainable trace</span>
+            </div>
+            <div id="recentCascades" class="cascade-list"><!-- injected --></div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Estimated Impact</h2>
+              <span class="tag tag-muted">Prototype simulation</span>
+            </div>
+            <div id="overviewImpact" class="impact-block"><!-- injected --></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Network Footprint</h2>
+            <span class="panel-note">Warehouses across regional nodes</span>
+          </div>
+          <div id="warehouseGrid" class="warehouse-grid"><!-- injected --></div>
+        </div>
+      </section>
+
+      <!-- ================= RIPPLE CONSOLE ================= -->
+      <section id="view-ripple" class="view">
+        <div class="ripple-layout">
+
+          <div class="ripple-side">
+            <div class="panel">
+              <div class="panel-head">
+                <h2>Scenario Simulator</h2>
+              </div>
+              <p class="panel-desc">Inject a real operational event. The Ripple Engine reacts autonomously — no manual step-through.</p>
+              <div id="scenarioButtons" class="scenario-buttons"><!-- injected --></div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <h2>Cascade History</h2>
+              </div>
+              <div id="cascadeHistory" class="cascade-history"><!-- injected --></div>
+            </div>
+          </div>
+
+          <div class="ripple-main panel">
+            <div class="panel-head">
+              <h2 id="traceTitle">Explainable Cascade Trace</h2>
+              <span class="tag" id="traceStatusTag">—</span>
+            </div>
+            <div id="traceMeta" class="trace-meta"></div>
+            <div id="traceContainer" class="trace-container">
+              <div class="empty-state">
+                <p>Run a scenario to watch HARVEX detect, reason, decide and act — one traceable step at a time.</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ================= INVENTORY ================= -->
+      <section id="view-inventory" class="view">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Inventory Batches</h2>
+            <span class="panel-note" id="inventoryCount"></span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="inventoryTable">
+              <thead>
+                <tr>
+                  <th>Batch</th><th>Product</th><th>Warehouse</th><th>Region</th>
+                  <th>Qty (kg)</th><th>Grade</th><th>Days Left</th><th>Status</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= PROCUREMENT & RISK ================= -->
+      <section id="view-procurement" class="view">
+        <div class="grid-2col">
+          <div class="panel">
+            <div class="panel-head"><h2>Open Procurement Orders</h2></div>
+            <div class="table-wrap">
+              <table class="data-table" id="procurementTable">
+                <thead><tr><th>Product</th><th>Supplier</th><th>Warehouse</th><th>Qty (kg)</th><th>₹/kg</th><th>Delivery</th><th>Status</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Supply Risks</h2></div>
+            <div id="riskList" class="risk-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= LOGISTICS ================= -->
+      <section id="view-logistics" class="view">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Logistics Operations</h2>
+            <span class="panel-note">Movement priority derived from remaining economic value</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="logisticsTable">
+              <thead><tr><th>Batch</th><th>Product</th><th>Origin</th><th>Destination</th><th>Priority</th><th>Status</th><th>ETA</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= WASTE LEDGER ================= -->
+      <section id="view-waste" class="view">
+        <div class="waste-banner">
+          <span class="tag tag-warn">Prototype simulation / estimated impact</span>
+          <p>All figures below are derived from synthetic seed data and illustrative spoilage-rate assumptions — not measured real-world outcomes.</p>
+        </div>
+        <div class="kpi-row" id="wasteKpiRow"></div>
+        <div class="panel">
+          <div class="panel-head"><h2>Impact Ledger</h2></div>
+          <div class="table-wrap">
+            <table class="data-table" id="wasteTable">
+              <thead><tr><th>Product</th><th>Trigger</th><th>Baseline (kg)</th><th>HARVEX (kg)</th><th>Avoided (kg)</th><th>₹ Preserved</th><th>Shelf-Life Util.</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= AGENT ACTIVITY ================= -->
+      <section id="view-agents" class="view">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Agent Activity Feed</h2>
+            <span class="panel-note">Most recent decisions across all cascades</span>
+          </div>
+          <div id="agentFeed" class="agent-feed"></div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<!-- Approval drawer -->
+<div id="approvalDrawer" class="drawer">
+  <div class="drawer-head">
+    <h2>Pending Approvals</h2>
+    <button class="drawer-close" id="closeDrawer">✕</button>
+  </div>
+  <div id="approvalList" class="approval-list"></div>
+</div>
+<button id="approvalToggle" class="approval-fab">
+  <span id="approvalCount">0</span> pending
+</button>
+<div id="toast" class="toast"></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
