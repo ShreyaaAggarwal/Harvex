@@ -22,7 +22,11 @@ FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
 app = Flask(__name__, static_folder=None)
 CORS(
     app,
-    resources={r"/api/*": {"origins": "https://harvex-beta.vercel.app"}},
+    resources={
+        r"/api/*": {
+            "origins": r"https://.*\.vercel\.app"
+        }
+    },
     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"]
 )
