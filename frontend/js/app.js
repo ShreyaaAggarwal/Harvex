@@ -3,9 +3,22 @@
    Vanilla JS, no build step. Talks to the Flask API on the same origin.
    ========================================================================= */
 
-const API = (typeof window !== "undefined" && window.HARVEX_API_BASE
-  ? window.HARVEX_API_BASE
-  : "https://harvex-backend-ftnn.onrender.com") + "/api";
+function resolveApiBase() {
+  if (typeof window !== "undefined" && window.HARVEX_API_BASE) {
+    return window.HARVEX_API_BASE.replace(/\/$/, "") + "/api";
+  }
+  // Local dev / same-origin deployments (e.g. Flask serving the frontend
+  // itself) should talk to their own origin instead of the hardcoded
+  // production backend.
+  if (typeof window !== "undefined" && window.location &&
+      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
+    return window.location.origin + "/api";
+  }
+  return "https://harvex-backend-ftnn.onrender.com/api";
+}
+
+const API = resolveApiBase();
+if (typeof window !== "undefined") window.HARVEX_RESOLVED_API = API; // for on-page debugging
 
 const state = {
   view: "overview",
@@ -60,16 +73,125 @@ function timeAgo(iso) {
   return Math.floor(hrs / 24) + "d ago";
 }
 
-async function api(path, opts) {
-  const res = await fetch(API + path, Object.assign({
-    headers: { "Content-Type": "application/json" },
-  }, opts || {}));
-  if (!res.ok) {
-    let msg = res.statusText;
-    try { const j = await res.json(); msg = j.error || msg; } catch (e) {}
-    throw new Error(msg);
+/**
+ * Core fetch wrapper. `retryOpts.retries` retries transient failures
+ * (network errors, and 502/503/504 — the exact status codes a sleeping
+ * Render free-tier instance returns while it wakes up) with backoff, so a
+ * cold backend doesn't read as "broken" on the very first click of a
+ * session. Errors are never swallowed — every failure surfaces the real
+ * HTTP status and response body (or a clear network-failure message)
+ * instead of a generic dead-end string.
+ */
+async function api(path, opts, retryOpts) {
+  const retries = (retryOpts && retryOpts.retries) || 0;
+  const retryDelayMs = (retryOpts && retryOpts.retryDelayMs) || 1500;
+
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(API + path, Object.assign({
+        headers: { "Content-Type": "application/json" },
+      }, opts || {}));
+
+      if (!res.ok) {
+        let detail = "";
+        try {
+          const j = await res.json();
+          detail = j.error || JSON.stringify(j);
+        } catch (e) {
+          try { detail = (await res.text()).slice(0, 220); } catch (e2) { /* no body */ }
+        }
+        const err = new Error(detail || `HTTP ${res.status}${res.statusText ? " " + res.statusText : ""}`);
+        err.status = res.status;
+        // 502/503/504 are exactly what Render returns while a sleeping
+        // free-tier service boots back up — worth retrying automatically.
+        if (attempt < retries && [502, 503, 504].includes(res.status)) {
+          lastErr = err;
+          await new Promise(r => setTimeout(r, retryDelayMs));
+          continue;
+        }
+        throw err;
+      }
+      return await res.json();
+    } catch (e) {
+      lastErr = e;
+      const isNetworkFailure = !e.status; // fetch() itself rejected — DNS/CORS/offline/refused
+      if (attempt < retries && isNetworkFailure) {
+        await new Promise(r => setTimeout(r, retryDelayMs));
+        continue;
+      }
+      break;
+    }
   }
-  return res.json();
+
+  if (!lastErr.status) {
+    lastErr.message = `Can't reach the HARVEX backend at ${API} (${lastErr.message || "network error"}). ` +
+      `It may be waking up from sleep (free-tier services do this) — try again in a few seconds, or ` +
+      `confirm the backend is deployed and reachable from this origin.`;
+  }
+  throw lastErr;
+}
+
+// ---------------------------------------------------------------------
+// Loading / error state helpers — shared by every view loader so a
+// backend failure is always visible and always recoverable, never a
+// silent blank panel.
+// ---------------------------------------------------------------------
+
+function loadingStateHtml(msg) {
+  return `<div class="load-state"><div class="spinner"></div><p>${escapeHtml(msg || "Loading…")}</p></div>`;
+}
+
+function errorStateHtml(err, retryLabel) {
+  const msg = (err && err.message) ? err.message : "Something went wrong.";
+  return `<div class="error-state">
+    <div class="error-state-icon">⚠</div>
+    <p class="error-state-msg">${escapeHtml(msg)}</p>
+    <button type="button" class="btn btn-ghost btn-sm error-retry-btn">${escapeHtml(retryLabel || "Retry")}</button>
+  </div>`;
+}
+
+/** Wires the Retry button inside a just-rendered error state to re-run `loaderFn`. */
+function wireRetry(container, loaderFn) {
+  const btn = container.querySelector(".error-retry-btn");
+  if (btn) btn.addEventListener("click", () => { loaderFn(); });
+}
+
+// table <tbody> elements can't directly contain a <div> per the HTML spec
+// (browsers will silently relocate it), so table-backed views get their
+// loading/error state wrapped in a colspan row instead.
+function loadingRowHtml(colspan, msg) {
+  return `<tr><td colspan="${colspan}">${loadingStateHtml(msg)}</td></tr>`;
+}
+function errorRowHtml(colspan, err, retryLabel) {
+  return `<tr><td colspan="${colspan}">${errorStateHtml(err, retryLabel)}</td></tr>`;
+}
+async function withLoadStateRow(tbody, colspan, loadingMsg, loaderFn) {
+  if (!tbody) { await loaderFn(); return; }
+  tbody.innerHTML = loadingRowHtml(colspan, loadingMsg);
+  try {
+    await loaderFn();
+  } catch (e) {
+    tbody.innerHTML = errorRowHtml(colspan, e);
+    wireRetry(tbody, () => withLoadStateRow(tbody, colspan, loadingMsg, loaderFn));
+  }
+}
+
+/**
+ * Runs `loaderFn` (which must render into `container` itself) with a
+ * loading state shown first and an error+retry state shown on failure.
+ * Every top-level view loader is wrapped in this so no fetch failure is
+ * ever silent.
+ */
+async function withLoadState(container, loadingMsg, loaderFn) {
+  if (!container) { await loaderFn(); return; }
+  container.innerHTML = loadingStateHtml(loadingMsg);
+  try {
+    await loaderFn();
+  } catch (e) {
+    container.innerHTML = errorStateHtml(e);
+    wireRetry(container, () => withLoadState(container, loadingMsg, loaderFn));
+  }
 }
 
 function toast(msg) {
@@ -126,6 +248,12 @@ function loadView(view) {
 // ---------------------------------------------------------------------
 
 async function loadOverview() {
+  await withLoadState($("#kpiRow"), "Loading operations overview…", async () => {
+    await loadOverviewInner();
+  });
+}
+
+async function loadOverviewInner() {
   const [ov] = await Promise.all([api("/overview")]);
 
   $("#kpiRow").innerHTML = `
@@ -192,6 +320,10 @@ function cascadeRowHtml(c) {
 // ---------------------------------------------------------------------
 
 async function loadRippleConsole() {
+  await withLoadState($("#scenarioButtons"), "Loading scenarios…", loadRippleConsoleInner);
+}
+
+async function loadRippleConsoleInner() {
   if (!state.scenarios.length) {
     state.scenarios = await api("/scenarios");
   }
@@ -242,20 +374,27 @@ async function openCascade(cascadeId, skipViewSwitch) {
   state.currentTraceCascadeId = cascadeId;
   if (!skipViewSwitch && state.view !== "ripple") setView("ripple");
 
-  const data = await api(`/cascades/${cascadeId}/trace`);
-  const c = data.cascade;
-  $("#traceTitle").textContent = "Cascade #" + c.id + " — " + c.trigger_description;
-  const statusTag = $("#traceStatusTag");
-  statusTag.textContent = c.status.replace("_", " ");
-  statusTag.className = "tag " + (c.status === "IN_PROGRESS" ? "tag-warn" : "tag-success");
+  const container = $("#traceContainer");
+  container.innerHTML = loadingStateHtml("Loading cascade trace…");
+  try {
+    const data = await api(`/cascades/${cascadeId}/trace`);
+    const c = data.cascade;
+    $("#traceTitle").textContent = "Cascade #" + c.id + " — " + c.trigger_description;
+    const statusTag = $("#traceStatusTag");
+    statusTag.textContent = c.status.replace("_", " ");
+    statusTag.className = "tag " + (c.status === "IN_PROGRESS" ? "tag-warn" : "tag-success");
 
-  $("#traceMeta").innerHTML = `
-    <span>Scenario <b>${escapeHtml(c.scenario_type)}</b></span>
-    <span>Started <b>${timeAgo(c.started_at)}</b></span>
-    <span>Steps <b>${data.steps.length}</b></span>
-  `;
+    $("#traceMeta").innerHTML = `
+      <span>Scenario <b>${escapeHtml(c.scenario_type)}</b></span>
+      <span>Started <b>${timeAgo(c.started_at)}</b></span>
+      <span>Steps <b>${data.steps.length}</b></span>
+    `;
 
-  renderTrace(data.steps, cascadeId);
+    renderTrace(data.steps, cascadeId);
+  } catch (e) {
+    container.innerHTML = errorStateHtml(e);
+    wireRetry(container, () => openCascade(cascadeId, true));
+  }
 }
 
 // ---- decision fact formatters, keyed by decision.event ----
@@ -594,6 +733,10 @@ function renderProvenance(data, target) {
 // ---------------------------------------------------------------------
 
 async function loadInventory() {
+  await withLoadStateRow($("#inventoryTable tbody"), 8, "Loading inventory…", loadInventoryInner);
+}
+
+async function loadInventoryInner() {
   const rows = await api("/inventory");
   $("#inventoryCount").textContent = rows.length + " batches";
   $("#inventoryTable tbody").innerHTML = rows.map(b => {
@@ -624,9 +767,27 @@ const PQ_BUCKETS = [
 ];
 
 async function loadPriorityQueue() {
-  const data = await api("/priority-queue");
+  const grid = $("#pqGrid");
+  grid.innerHTML = loadingStateHtml("Loading priority queue…");
+  let data;
+  try {
+    // Retries transient failures (including a cold-starting backend)
+    // automatically before surfacing an error.
+    data = await api("/priority-queue", null, { retries: 2 });
+  } catch (e) {
+    grid.innerHTML = errorStateHtml(e);
+    wireRetry(grid, loadPriorityQueue);
+    return;
+  }
+  if (!data || !data.groups || !data.counts || !data.kg_totals) {
+    grid.innerHTML = errorStateHtml(new Error(
+      "The priority queue endpoint responded, but not with the expected data shape (missing groups/counts/kg_totals)."
+    ));
+    wireRetry(grid, loadPriorityQueue);
+    return;
+  }
 
-  $("#pqGrid").innerHTML = PQ_BUCKETS.map(b => {
+  grid.innerHTML = PQ_BUCKETS.map(b => {
     const items = data.groups[b.key] || [];
     const count = data.counts[b.key] || 0;
     const kg = data.kg_totals[b.key] || 0;
@@ -865,7 +1026,10 @@ async function sendAssistantMessage(message) {
     <div class="asst-bubble asst-typing"><span></span><span></span><span></span></div>`);
 
   try {
-    const res = await api("/assistant/query", { method: "POST", body: JSON.stringify({ message }) });
+    // Retries transient failures (including a cold-starting backend) before
+    // giving up, so the very first question of a session doesn't fail just
+    // because the server was asleep.
+    const res = await api("/assistant/query", { method: "POST", body: JSON.stringify({ message }) }, { retries: 2 });
     thinkingEl.remove();
     appendAssistantMessage("bot", assistantReplyHtml(res));
     state.assistantHistory.push({ role: "assistant", data: res });
@@ -878,9 +1042,20 @@ async function sendAssistantMessage(message) {
     });
   } catch (e) {
     thinkingEl.remove();
-    appendAssistantMessage("bot", `
+    const statusLine = e.status ? `HTTP ${e.status} — ` : "";
+    const bot = appendAssistantMessage("bot", `
       <div class="asst-avatar">✦</div>
-      <div class="asst-bubble"><div class="asst-bubble-text">Something went wrong reaching the Command Assistant: ${escapeHtml(e.message)}</div></div>`);
+      <div class="asst-bubble">
+        <div class="asst-bubble-text">Couldn't reach the Command Assistant: ${escapeHtml(statusLine + (e.message || "unknown error"))}</div>
+        <button type="button" class="btn btn-ghost btn-sm asst-retry-btn" style="margin-top:8px;">Retry this question</button>
+      </div>`);
+    const retryBtn = bot.querySelector(".asst-retry-btn");
+    if (retryBtn) {
+      retryBtn.addEventListener("click", () => {
+        bot.remove();
+        sendAssistantMessage(message);
+      }, { once: true });
+    }
   }
   renderAssistantSuggestions();
 }
@@ -895,6 +1070,10 @@ function clearAssistant() {
 // ---------------------------------------------------------------------
 
 async function loadProcurement() {
+  await withLoadStateRow($("#procurementTable tbody"), 7, "Loading procurement & risk…", loadProcurementInner);
+}
+
+async function loadProcurementInner() {
   const [orders, risks] = await Promise.all([api("/procurement"), api("/risks")]);
   $("#procurementTable tbody").innerHTML = orders.map(o => `<tr>
       <td>${escapeHtml(o.product_name)}</td>
@@ -904,7 +1083,7 @@ async function loadProcurement() {
       <td class="num">${fmtINR(o.price_per_kg)}</td>
       <td class="mono">${escapeHtml(o.delivery_date)}</td>
       <td><span class="badge badge-monitor">${escapeHtml(o.status)}</span></td>
-    </tr>`).join("");
+    </tr>`).join("") || `<tr><td colspan="7"><div class="empty-state"><p>No procurement orders on record.</p></div></td></tr>`;
 
   $("#riskList").innerHTML = risks.length ? risks.map(r => `
     <div class="risk-row">
@@ -922,6 +1101,10 @@ async function loadProcurement() {
 // ---------------------------------------------------------------------
 
 async function loadLogistics() {
+  await withLoadStateRow($("#logisticsTable tbody"), 8, "Loading logistics…", loadLogisticsInner);
+}
+
+async function loadLogisticsInner() {
   const rows = await api("/logistics");
   $("#logisticsTable tbody").innerHTML = rows.length ? rows.map(l => {
     const pClass = l.priority === "MOVE_NOW" ? "badge-urgent" : l.priority === "MARKDOWN_WINDOW" ? "badge-window" : "badge-monitor";
@@ -947,6 +1130,10 @@ async function loadLogistics() {
 // ---------------------------------------------------------------------
 
 async function loadColdChain() {
+  await withLoadState($("#coldChainKpiRow"), "Loading cold-chain status…", loadColdChainInner);
+}
+
+async function loadColdChainInner() {
   const [readings, warehouses, cascades] = await Promise.all([
     api("/cold-chain"), api("/warehouses"), api("/cascades"),
   ]);
@@ -1041,6 +1228,10 @@ async function loadColdChain() {
 // ---------------------------------------------------------------------
 
 async function loadWaste() {
+  await withLoadState($("#wasteKpiRow"), "Loading waste ledger…", loadWasteInner);
+}
+
+async function loadWasteInner() {
   const data = await api("/waste-ledger");
   const t = data.totals;
   $("#wasteKpiRow").innerHTML = `
@@ -1081,6 +1272,10 @@ async function loadWaste() {
 // ---------------------------------------------------------------------
 
 async function loadAgents() {
+  await withLoadState($("#agentFeed"), "Loading agent activity…", loadAgentsInner);
+}
+
+async function loadAgentsInner() {
   const rows = await api("/agents/activity");
   $("#agentFeed").innerHTML = rows.length ? rows.map(r => `
     <div class="agent-feed-row">
@@ -1098,10 +1293,17 @@ async function loadAgents() {
 // ---------------------------------------------------------------------
 
 async function refreshApprovalCount() {
-  const rows = await api("/actions?status=PENDING");
-  state.pendingCount = rows.length;
-  $("#approvalCount").textContent = rows.length;
-  return rows;
+  try {
+    const rows = await api("/actions?status=PENDING");
+    state.pendingCount = rows.length;
+    $("#approvalCount").textContent = rows.length;
+    return rows;
+  } catch (e) {
+    // Non-fatal — the pending-approvals badge just keeps its last known
+    // value rather than crashing the boot sequence.
+    console.warn("Could not refresh approval count:", e.message);
+    return [];
+  }
 }
 
 // Numeric payload fields worth exposing for a manager to Modify, in
@@ -1162,28 +1364,32 @@ function approvalCardHtml(a) {
 }
 
 async function openApprovalDrawer() {
-  const rows = await refreshApprovalCount();
-  $("#approvalList").innerHTML = rows.length ? rows.map(approvalCardHtml).join("") :
-    `<div class="empty-state"><p>No actions awaiting approval.</p></div>`;
-
-  $all(".approve-btn").forEach(b => b.addEventListener("click", (e) => decideAction(e, "approve")));
-  $all(".reject-btn").forEach(b => b.addEventListener("click", (e) => decideAction(e, "reject")));
-
-  $all(".modify-btn").forEach(b => b.addEventListener("click", (e) => {
-    const form = e.target.closest(".approval-card").querySelector(".modify-form");
-    if (form) form.classList.toggle("open");
-  }));
-  $all(".modify-cancel").forEach(b => b.addEventListener("click", (e) => {
-    e.target.closest(".modify-form").classList.remove("open");
-  }));
-  $all(".modify-form").forEach(form => {
-    form.addEventListener("submit", (e) => { e.preventDefault(); submitModify(form); });
-  });
-  $all("#approvalDrawer .why-btn").forEach(btn => {
-    btn.addEventListener("click", () => openProvenance(Number(btn.dataset.cascade)));
-  });
-
   $("#approvalDrawer").classList.add("open");
+  await withLoadState($("#approvalList"), "Loading pending approvals…", async () => {
+    const rows = await api("/actions?status=PENDING");
+    state.pendingCount = rows.length;
+    $("#approvalCount").textContent = rows.length;
+
+    $("#approvalList").innerHTML = rows.length ? rows.map(approvalCardHtml).join("") :
+      `<div class="empty-state"><p>No actions awaiting approval.</p></div>`;
+
+    $all(".approve-btn").forEach(b => b.addEventListener("click", (e) => decideAction(e, "approve")));
+    $all(".reject-btn").forEach(b => b.addEventListener("click", (e) => decideAction(e, "reject")));
+
+    $all(".modify-btn").forEach(b => b.addEventListener("click", (e) => {
+      const form = e.target.closest(".approval-card").querySelector(".modify-form");
+      if (form) form.classList.toggle("open");
+    }));
+    $all(".modify-cancel").forEach(b => b.addEventListener("click", (e) => {
+      e.target.closest(".modify-form").classList.remove("open");
+    }));
+    $all(".modify-form").forEach(form => {
+      form.addEventListener("submit", (e) => { e.preventDefault(); submitModify(form); });
+    });
+    $all("#approvalDrawer .why-btn").forEach(btn => {
+      btn.addEventListener("click", () => openProvenance(Number(btn.dataset.cascade)));
+    });
+  });
 }
 
 async function submitModify(form) {
@@ -1232,6 +1438,25 @@ async function decideAction(e, decision) {
 // Init
 // ---------------------------------------------------------------------
 
+async function checkBackendMode() {
+  const pill = $("#llmModePill");
+  const text = $("#llmModeText");
+  pill.classList.remove("tag-live", "tag-offline");
+  text.textContent = "Checking mode…";
+  try {
+    const meta = await api("/meta", null, { retries: 2 });
+    if (meta.llm_mode === "live") {
+      text.textContent = "Live reasoning";
+      pill.classList.add("tag-live");
+    } else {
+      text.textContent = "Simulation mode";
+    }
+  } catch (e) {
+    text.textContent = "Backend unreachable — retry";
+    pill.classList.add("tag-offline");
+  }
+}
+
 async function init() {
   $all(".nav-item").forEach(btn => btn.addEventListener("click", () => setView(btn.dataset.view)));
   $("#refreshBtn").addEventListener("click", () => loadView(state.view));
@@ -1258,20 +1483,11 @@ async function init() {
     });
   }
 
-  try {
-    const meta = await api("/meta");
-    const pill = $("#llmModePill");
-    const text = $("#llmModeText");
-    if (meta.llm_mode === "live") {
-      text.textContent = "Live reasoning";
-      pill.classList.add("tag-live");
-    } else {
-      text.textContent = "Simulation mode";
-    }
-  } catch (e) {
-    $("#llmModeText").textContent = "Offline";
-  }
+  // Clicking the connectivity pill re-checks the backend — useful when it
+  // was asleep on first load (Render free-tier cold start).
+  $("#llmModePill").addEventListener("click", checkBackendMode);
 
+  await checkBackendMode();
   refreshApprovalCount();
   setView("overview");
 }
