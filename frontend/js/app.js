@@ -3,7 +3,7 @@
    Vanilla JS, no build step. Talks to the Flask API on the same origin.
    ========================================================================= */
 
-const API = "/api";
+const API = "https://harvex-backend-ftnn.onrender.com/api";
 
 const state = {
   view: "overview",
