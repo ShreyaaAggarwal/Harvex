@@ -20,7 +20,12 @@ import seed_data
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
 
 app = Flask(__name__, static_folder=None)
-CORS(app)
+CORS(
+    app,
+    resources={r"/api/*": {"origins": "https://harvex-beta.vercel.app"}},
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"]
+)
 
 
 # ---------------------------------------------------------------------------
