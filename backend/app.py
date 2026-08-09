@@ -433,15 +433,17 @@ def assistant_query():
 def list_actions():
     status = request.args.get("status")
     with db_session() as conn:
+        base_q = (
+            "SELECT a.*, c.trigger_description, c.scenario_type, "
+            "ad.reasoning as agent_reasoning, ad.confidence as agent_confidence, ad.agent_name "
+            "FROM actions a "
+            "JOIN cascades c ON c.id=a.cascade_id "
+            "LEFT JOIN agent_decisions ad ON ad.id=a.decision_id "
+        )
         if status:
-            rows = conn.execute(
-                "SELECT a.*, c.trigger_description FROM actions a JOIN cascades c ON c.id=a.cascade_id "
-                "WHERE a.status=? ORDER BY a.id DESC", (status,)
-            ).fetchall()
+            rows = conn.execute(base_q + "WHERE a.status=? ORDER BY a.id DESC", (status,)).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT a.*, c.trigger_description FROM actions a JOIN cascades c ON c.id=a.cascade_id ORDER BY a.id DESC LIMIT 50"
-            ).fetchall()
+            rows = conn.execute(base_q + "ORDER BY a.id DESC LIMIT 50").fetchall()
         out = []
         for r in rows:
             d = row_to_dict(r)

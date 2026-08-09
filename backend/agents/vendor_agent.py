@@ -35,7 +35,8 @@ class VendorRenegotiationAgent(Agent):
             }
             fallback = f"No open confirmed orders for {product['name']} — no renegotiation needed."
             text = llm.explain("You are the Vendor Renegotiation Agent inside HARVEX.", decision, fallback)
-            return AgentResult(decision=decision, reasoning=text["text"], confidence=0.6, downstream_events=[]), text["mode"]
+            return AgentResult(decision=decision, reasoning=text["text"], confidence=0.6,
+                                downstream_events=[(EV.VENDOR_RENEGOTIATION_RECOMMENDED, decision)]), text["mode"]
 
         if event.event_type == EV.DEMAND_SHOCK and p["change_pct"] < 0:
             action = "DELAY_DELIVERY" if orders["reliability_score"] >= 0.85 else "REDUCE_QUANTITY"
@@ -83,5 +84,5 @@ class VendorRenegotiationAgent(Agent):
 
         return AgentResult(
             decision=decision, reasoning=text["text"], confidence=0.74,
-            downstream_events=[], actions=actions,
+            downstream_events=[(EV.VENDOR_RENEGOTIATION_RECOMMENDED, decision)], actions=actions,
         ), text["mode"]

@@ -18,6 +18,59 @@ class LogisticsCoordinationAgent(Agent):
     name = "Logistics Coordination Agent"
     reacts_to = (EV.SHELF_LIFE_ALLOCATED, EV.COLD_CHAIN_BREACH)
 
+    def detect_delay(self, conn, llm, warehouse_id, delay_hours, disruption_type="TRUCK_BREAKDOWN"):
+        """Feature 5 root sensor — Truck Breakdown / Heavy Rainfall / route
+        disruption at a warehouse delays dispatch, which disproportionately
+        threatens the batches with the least shelf-life slack to absorb the
+        delay. Selects the soonest-expiring in-stock batches at this
+        warehouse as exposed, then hands off via LOGISTICS_DELAY so
+        Warehouse Allocation routes them into the Shelf-Life Budget
+        Allocator exactly like a cold-chain breach."""
+        wh = conn.execute("SELECT * FROM warehouses WHERE id=?", (warehouse_id,)).fetchone()
+        batches = conn.execute(
+            "SELECT b.*, p.name as product_name FROM inventory_batches b "
+            "JOIN products p ON p.id = b.product_id "
+            "WHERE b.warehouse_id=? AND b.status='IN_STOCK' "
+            "ORDER BY julianday(b.expiry_date) ASC LIMIT 6",
+            (warehouse_id,),
+        ).fetchall()
+        affected_kg = sum(b["quantity_kg"] for b in batches)
+        severity = "HIGH" if delay_hours >= 8 else ("MEDIUM" if delay_hours >= 4 else "LOW")
+        label = disruption_type.replace("_", " ").title()
+
+        decision = {
+            "event": "LOGISTICS_DELAY",
+            "warehouse": wh["name"],
+            "warehouse_id": warehouse_id,
+            "disruption_type": disruption_type,
+            "delay_hours": delay_hours,
+            "severity": severity,
+            "affected_batch_ids": [b["id"] for b in batches],
+            "affected_kg": round(affected_kg, 1),
+            "evidence": [
+                f"{label} adds a {delay_hours:.0f}h dispatch delay at {wh['name']}",
+                f"{len(batches)} soonest-expiring batch(es) exposed, {affected_kg:.0f} kg total",
+                f"Classified {severity} severity",
+            ],
+        }
+        fallback = (
+            f"{label} adds a {delay_hours:.0f}h dispatch delay at {wh['name']}, exposing ~{affected_kg:.0f} kg "
+            f"across {len(batches)} soonest-expiring batch(es). Severity {severity}. Escalating to Warehouse "
+            f"Allocation for shelf-life re-prioritization."
+        )
+        text = llm.explain(
+            "You are the Logistics Coordination Agent inside HARVEX detecting a dispatch delay. "
+            "State the disruption and its exposure plainly in one or two sentences.",
+            decision, fallback,
+        )
+        result = AgentResult(
+            decision=decision,
+            reasoning=text["text"],
+            confidence=0.85 if severity == "HIGH" else 0.72,
+            downstream_events=[(EV.LOGISTICS_DELAY, decision)],
+        )
+        return result, text["mode"]
+
     def react(self, event, conn, llm) -> AgentResult:
         p = event.payload
 

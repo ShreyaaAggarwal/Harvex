@@ -101,6 +101,6 @@ class ProcurementPlanningAgent(Agent):
             decision=decision,
             reasoning=text["text"],
             confidence=0.85 if event.event_type == EV.DEMAND_SHOCK else 0.79,
-            downstream_events=[],
+            downstream_events=[(EV.PROCUREMENT_ADJUSTED, decision)],
             actions=actions,
         ), text["mode"]

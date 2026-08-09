@@ -58,6 +58,9 @@
       <button class="nav-item" data-view="logistics">
         <span class="nav-ico">➤</span> Logistics
       </button>
+      <button class="nav-item" data-view="coldchain">
+        <span class="nav-ico">❄</span> Cold-Chain
+      </button>
     </div>
 
     <div class="nav-group">
@@ -250,6 +253,40 @@
           <div class="table-wrap">
             <table class="data-table" id="logisticsTable">
               <thead><tr><th>Batch</th><th>Product</th><th>Origin</th><th>Destination</th><th>Priority</th><th>Status</th><th>ETA</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= COLD-CHAIN RISK MONITOR ================= -->
+      <section id="view-coldchain" class="view">
+        <div class="kpi-row" id="coldChainKpiRow"><!-- injected --></div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Warehouse Cold-Chain Status</h2>
+            <span class="panel-note">Latest reading per cold-chain-enabled warehouse</span>
+          </div>
+          <div id="coldChainWarehouseGrid" class="cc-warehouse-grid"><!-- injected --></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Breach Incidents &amp; Cascade Response</h2>
+            <span class="panel-note">Every cold-chain breach that triggered the Ripple Engine</span>
+          </div>
+          <div id="coldChainIncidents" class="cascade-list"><!-- injected --></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Recent Readings</h2>
+            <span class="panel-note">Most recent temperature/humidity observations, all warehouses</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="coldChainTable">
+              <thead><tr><th>Warehouse</th><th>Recorded</th><th>Temp</th><th>Target</th><th>Δ</th><th>Humidity</th><th>Status</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
