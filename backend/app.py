@@ -10,6 +10,7 @@ import os
 import json
 from datetime import datetime, date
 from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
 
 from database import get_conn, db_session, init_db, row_to_dict, rows_to_list, dumps
 from engine.ripple_engine import ripple_engine
@@ -19,6 +20,7 @@ import seed_data
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
 
 app = Flask(__name__, static_folder=None)
+CORS(app)
 
 
 # ---------------------------------------------------------------------------
