@@ -751,3 +751,55 @@ input[type="text"]::placeholder{ color: var(--charcoal-45); }
   .nav-footer{ display:none; }
   .inline-search input{ width:120px; }
 }
+/* =========================================================================
+   Resilience states — loading / error / retry
+   Added so a failed API call is always visible and recoverable instead of
+   a silent blank panel. Reuses existing tokens/patterns (.empty-state,
+   .tag, .btn) so it sits naturally inside the existing HARVEX identity.
+   ========================================================================= */
+
+.load-state{
+  padding: 44px 20px; text-align:center; color: var(--charcoal-45); font-size:13.5px;
+  animation: fadeUp 0.25s ease both;
+}
+.load-state .spinner{
+  width:22px; height:22px; margin:0 auto 12px; border-radius:50%;
+  border:2.5px solid var(--line-strong); border-top-color: var(--olive-600);
+  animation: harvexSpin 0.8s linear infinite;
+}
+@keyframes harvexSpin{ to{ transform: rotate(360deg); } }
+
+.error-state{
+  padding: 32px 20px; text-align:center; font-size:13.5px;
+  background: var(--cream-panel); border: 1px dashed var(--terracotta-lt);
+  border-radius: var(--radius-md); animation: fadeUp 0.25s ease both;
+}
+.error-state-icon{ font-size:20px; color: var(--danger); margin-bottom:8px; line-height:1; }
+.error-state-msg{ max-width: 480px; margin: 0 auto 14px; line-height:1.6; color: var(--terracotta-dk); }
+.error-retry-btn{ margin-top: 2px; }
+
+/* Priority Queue / Cold-Chain grids span the full row while loading/erroring */
+.pq-grid > .load-state, .pq-grid > .error-state,
+.cc-warehouse-grid > .load-state, .cc-warehouse-grid > .error-state,
+.warehouse-grid > .load-state, .warehouse-grid > .error-state{
+  grid-column: 1 / -1;
+}
+
+/* Table-backed loading/error rows: strip default row chrome so the
+   centered state block reads cleanly inside a <td colspan>. */
+.data-table tbody tr td .load-state,
+.data-table tbody tr td .error-state{
+  margin: 0;
+}
+
+/* Backend-offline connectivity pill (nav footer) */
+.mode-pill.tag-offline{
+  cursor: pointer;
+  background:#F1D9D2; border-color:#E3B9AC;
+}
+.mode-pill.tag-offline .dot{ background: var(--danger); }
+.mode-pill{ cursor: pointer; }
+.mode-pill:hover{ filter: brightness(0.97); }
+
+/* Command Assistant retry button spacing */
+.asst-retry-btn{ display:inline-flex; }

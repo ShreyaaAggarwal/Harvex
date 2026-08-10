@@ -837,7 +837,13 @@ async function ensureInventoryIndex() {
 async function searchBatch(query) {
   const q = (query || "").trim().toLowerCase();
   if (!q) return;
-  const idx = await ensureInventoryIndex();
+  let idx;
+  try {
+    idx = await ensureInventoryIndex();
+  } catch (e) {
+    toast("Couldn't search batches: " + e.message);
+    return;
+  }
   let id = idx[q];
   if (!id) {
     const hit = Object.entries(idx).find(([code]) => code.includes(q));
@@ -900,13 +906,14 @@ async function loadFreshnessLookup(batchId) {
   state.activePqBatch = batchId;
   $all(".pq-card").forEach(c => c.classList.toggle("active", Number(c.dataset.batch) === batchId));
   const box = $("#freshnessLookup");
-  box.innerHTML = `<div class="empty-state"><p>Loading freshness budget…</p></div>`;
+  box.innerHTML = loadingStateHtml("Loading freshness budget…");
   try {
-    const fb = await api(`/batches/${batchId}/freshness-budget`);
+    const fb = await api(`/batches/${batchId}/freshness-budget`, null, { retries: 2 });
     box.innerHTML = freshnessBudgetHtml(fb);
     box.scrollIntoView({ behavior: "smooth", block: "nearest" });
   } catch (e) {
-    box.innerHTML = `<div class="empty-state"><p>Could not load this batch: ${escapeHtml(e.message)}</p></div>`;
+    box.innerHTML = errorStateHtml(e, "Retry");
+    wireRetry(box, () => loadFreshnessLookup(batchId));
   }
 }
 
